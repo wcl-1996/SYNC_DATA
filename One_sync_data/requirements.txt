@@ -3,3 +3,8 @@ mysql-connector-python>=8.0.32
 PyYAML>=6.0
 python-dateutil>=2.8.2
 flask-cors>=4.0.0
+# 可选数据库驱动 (根据需要安装)
+# cx_Oracle>=8.3.0  # Oracle 数据库
+# dmPython>=2.0     # 达梦数据库
+# psycopg2-binary>=2.9.0  # PostgreSQL
+# pyodbc>=4.0.0     # SQL Server

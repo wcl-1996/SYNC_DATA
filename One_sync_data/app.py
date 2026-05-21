@@ -1,13 +1,25 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import threading
 import datetime
 from dateutil import parser
 import mysql.connector
 from mysql.connector import Error
+import os
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder='static')
 CORS(app)
+
+# 数据库类型名称映射
+DB_TYPE_NAMES = {
+    'mysql': 'MySQL',
+    'oracle': 'Oracle',
+    'dameng': '达梦',
+    'postgresql': 'PostgreSQL',
+    'sqlserver': 'SQL Server',
+    'redis': 'Redis',
+    'sqlite': 'SQLite'
+}
 
 sync_status = {
     'running': False,
@@ -25,30 +37,131 @@ def add_log(message):
     sync_status['logs'].append(message)
 
 class DBConnector:
-    def __init__(self):
+    def __init__(self, db_type='mysql'):
         self.connection = None
         self.cursor = None
+        self.db_type = db_type
 
-    def connect(self, host, port, database, user, password):
+    def connect(self, host, port, database, user, password, db_type=None):
+        if db_type:
+            self.db_type = db_type
+        
         try:
-            self.connection = mysql.connector.connect(
-                host=host,
-                port=int(port),
-                database=database,
-                user=user,
-                password=password
-            )
-            if self.connection.is_connected():
-                self.cursor = self.connection.cursor(dictionary=True)
-                return {'success': True}
-        except Error as e:
+            if self.db_type == 'mysql':
+                self.connection = mysql.connector.connect(
+                    host=host,
+                    port=int(port),
+                    database=database,
+                    user=user,
+                    password=password
+                )
+                if self.connection.is_connected():
+                    self.cursor = self.connection.cursor(dictionary=True)
+                    return {'success': True}
+            
+            elif self.db_type == 'oracle':
+                # Oracle 连接 (需要安装 cx_Oracle)
+                try:
+                    import cx_Oracle
+                    dsn = cx_Oracle.makedsn(host, port, service_name=database or 'ORCL')
+                    self.connection = cx_Oracle.connect(user, password, dsn)
+                    self.cursor = self.connection.cursor()
+                    return {'success': True}
+                except ImportError:
+                    return {'success': False, 'error': 'Oracle 驱动未安装，请安装 cx_Oracle'}
+            
+            elif self.db_type == 'dameng':
+                # 达梦数据库连接 (需要安装 dmPython)
+                try:
+                    import dmPython
+                    self.connection = dmPython.connect(
+                        user=user,
+                        password=password,
+                        server=host,
+                        port=int(port)
+                    )
+                    self.cursor = self.connection.cursor()
+                    return {'success': True}
+                except ImportError:
+                    return {'success': False, 'error': '达梦驱动未安装，请安装 dmPython'}
+            
+            elif self.db_type == 'postgresql':
+                # PostgreSQL 连接 (需要安装 psycopg2)
+                try:
+                    import psycopg2
+                    self.connection = psycopg2.connect(
+                        host=host,
+                        port=int(port),
+                        database=database,
+                        user=user,
+                        password=password
+                    )
+                    self.cursor = self.connection.cursor()
+                    return {'success': True}
+                except ImportError:
+                    return {'success': False, 'error': 'PostgreSQL 驱动未安装，请安装 psycopg2'}
+            
+            elif self.db_type == 'sqlserver':
+                # SQL Server 连接 (需要安装 pyodbc)
+                try:
+                    import pyodbc
+                    conn_str = f'DRIVER={{ODBC Driver 17 for SQL Server}};SERVER={host},{port};DATABASE={database};UID={user};PWD={password}'
+                    self.connection = pyodbc.connect(conn_str)
+                    self.cursor = self.connection.cursor()
+                    return {'success': True}
+                except ImportError:
+                    return {'success': False, 'error': 'SQL Server 驱动未安装，请安装 pyodbc'}
+            
+            elif self.db_type == 'redis':
+                # Redis 连接 (需要安装 redis)
+                try:
+                    import redis
+                    self.connection = redis.Redis(
+                        host=host,
+                        port=int(port) if port else 6379,
+                        password=password if password else None,
+                        db=int(database) if database else 0,
+                        decode_responses=True
+                    )
+                    self.connection.ping()  # 测试连接
+                    self.cursor = None  # Redis 不需要 cursor
+                    return {'success': True}
+                except ImportError:
+                    return {'success': False, 'error': 'Redis 驱动未安装，请安装 redis'}
+                except Exception as e:
+                    return {'success': False, 'error': f'Redis 连接失败: {str(e)}'}
+            
+            elif self.db_type == 'sqlite':
+                # SQLite 连接 (Python 内置支持)
+                try:
+                    import sqlite3
+                    # host 参数作为文件路径
+                    self.connection = sqlite3.connect(host if host else ':memory:')
+                    self.connection.row_factory = sqlite3.Row
+                    self.cursor = self.connection.cursor()
+                    return {'success': True}
+                except Exception as e:
+                    return {'success': False, 'error': f'SQLite 连接失败: {str(e)}'}
+            
+            else:
+                return {'success': False, 'error': f'不支持的数据库类型: {self.db_type}'}
+                
+        except Exception as e:
             return {'success': False, 'error': str(e)}
+        
         return {'success': False}
 
     def disconnect(self):
-        if self.connection and self.connection.is_connected():
-            self.cursor.close()
-            self.connection.close()
+        if self.connection:
+            if self.db_type == 'mysql' and self.connection.is_connected():
+                self.cursor.close()
+                self.connection.close()
+            else:
+                try:
+                    self.cursor.close()
+                    self.connection.close()
+                except:
+                    pass
 
     def execute_query(self, query, params=None):
         try:
@@ -84,11 +197,32 @@ class DBConnector:
         return [row['Database'] for row in result]
 
     def get_tables(self, database=None):
-        if database:
-            self.execute_query(f"USE {database}")
-        query = "SHOW TABLES"
-        result = self.fetch_all(query)
-        return [list(row.values())[0] for row in result]
+        try:
+            if self.db_type == 'mysql':
+                if database:
+                    self.execute_query(f"USE {database}")
+                query = "SHOW TABLES"
+                result = self.fetch_all(query)
+                return [list(row.values())[0] for row in result]
+            elif self.db_type == 'oracle':
+                query = "SELECT table_name FROM user_tables"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            elif self.db_type == 'postgresql':
+                query = "SELECT tablename FROM pg_tables WHERE schemaname='public'"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            elif self.db_type == 'redis':
+                # Redis 返回所有 keys
+                return self.connection.keys('*')
+            elif self.db_type == 'sqlite':
+                query = "SELECT name FROM sqlite_master WHERE type='table'"
+                result = self.fetch_all(query)
+                return [row['name'] for row in result]
+            else:
+                return []
+        except Exception as e:
+            return []
 
     def get_table_schema(self, table_name):
         query = f"DESCRIBE {table_name}"
@@ -487,13 +621,15 @@ def migration():
 @app.route('/api/connect', methods=['POST'])
 def connect_db():
     data = request.json
-    conn = DBConnector()
+    db_type = data.get('db_type', 'mysql')
+    conn = DBConnector(db_type)
     result = conn.connect(
         data['host'],
         data['port'],
         data['database'],
         data['user'],
-        data['password']
+        data['password'],
+        db_type
     )
     
     if result['success']:
@@ -505,13 +641,15 @@ def connect_db():
 @app.route('/api/get_tables', methods=['POST'])
 def get_tables():
     data = request.json
-    conn = DBConnector()
+    db_type = data.get('db_type', 'mysql')
+    conn = DBConnector(db_type)
     result = conn.connect(
         data['host'],
         data['port'],
         data['database'],
         data['user'],
-        data['password']
+        data['password'],
+        db_type
     )
     
     if result['success']:
@@ -523,13 +661,15 @@ def get_tables():
 @app.route('/api/get_schema', methods=['POST'])
 def get_schema():
     data = request.json
-    conn = DBConnector()
+    db_type = data.get('db_type', 'mysql')
+    conn = DBConnector(db_type)
     result = conn.connect(
         data['host'],
         data['port'],
         data['database'],
         data['user'],
-        data['password']
+        data['password'],
+        db_type
     )
     
     if result['success']:
@@ -570,4 +710,6 @@ def cancel_sync():
         return jsonify({'success': False, 'message': 'No sync running'})
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    import os
+    port = int(os.environ.get('DEPLOY_RUN_PORT', 5000))
+    app.run(debug=False, host='0.0.0.0', port=port)
