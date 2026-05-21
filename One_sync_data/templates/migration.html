@@ -1,0 +1,1378 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据迁移配置</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --primary-light: #eff6ff;
+            --success: #16a34a;
+            --danger: #dc2626;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --radius: 8px;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+            background: var(--gray-50);
+            color: var(--gray-800);
+        }
+
+        .header {
+            background: var(--primary);
+            color: white;
+            padding: 16px 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            box-shadow: var(--shadow);
+        }
+        .header-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+        .btn {
+            padding: 8px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: white;
+            color: var(--primary);
+        }
+        .btn-primary:hover {
+            background: var(--gray-100);
+        }
+        .btn-secondary {
+            background: var(--primary);
+            color: white;
+        }
+        .btn-secondary:hover {
+            background: var(--primary-hover);
+        }
+        .header .btn-secondary {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+        .header .btn-secondary:hover {
+            background: rgba(255,255,255,0.3);
+        }
+
+        .main {
+            max-width: 1200px;
+            margin: 24px auto;
+            padding: 0 24px;
+        }
+
+        .section {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+        .section-header {
+            padding: 16px 20px;
+            background: var(--primary-light);
+            border-bottom: 2px solid var(--primary);
+            font-weight: 600;
+            color: var(--primary);
+        }
+        .section-body {
+            padding: 20px;
+        }
+        
+        .main > .section:nth-child(2) > .section-body {
+            background-color: transparent;
+        }
+        
+        .main > .section:nth-child(4) > .section-body > .progress-bar {
+            color: #0be04b;
+        }
+        
+        #sync-log {
+            background-color: #f3f7f7;
+            color: #0c0d0d;
+            font-family: Arial, sans-serif;
+        }
+        
+        #modal-sync-log {
+            color: #2a2b2c;
+            background-color: #fbfcfe;
+            text-align: left;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 16px;
+        }
+        .form-group {
+            display: flex;
+            flex-direction: column;
+        }
+        .form-label {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--gray-700);
+            margin-bottom: 6px;
+        }
+        .form-input, .form-select {
+            padding: 10px 12px;
+            border: 2px solid var(--gray-200);
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        
+        #source-table {
+            width: 102px;
+        }
+        
+        #source-host {
+            font-family: Arial, sans-serif;
+            color: #d22d2d;
+        }
+        
+        #target-host, #target-port, #target-db, #target-user, #target-password,
+        #source-port, #source-db, #source-password, #source-user {
+            color: rgb(210, 45, 45);
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .form-textarea {
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .status-badge {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status-success {
+            background: rgba(22, 163, 74, 0.1);
+            color: var(--success);
+        }
+        .status-danger {
+            background: rgba(220, 38, 38, 0.1);
+            color: var(--danger);
+        }
+
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .table th, .table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--gray-100);
+        }
+        .table th {
+            background: var(--gray-50);
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .mapping-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: var(--gray-50);
+            border-radius: 6px;
+            margin-bottom: 8px;
+        }
+
+        .progress-bar {
+            height: 6px;
+            background: var(--gray-200);
+            border-radius: 3px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+        .progress-fill {
+            height: 100%;
+            background: var(--primary);
+            transition: width 0.3s;
+        }
+        div#modal-progress-fill {
+            background-color: #18d861;
+        }
+        span#modal-progress-text {
+            color: #16df52;
+        }
+        span#modal-inserted-count {
+            color: #11d44c;
+        }
+
+        .config-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+        }
+        .config-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+            text-align: center;
+            border: 1px solid var(--gray-100);
+        }
+        .config-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 16px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-light) 0%, rgba(37,99,235,0.1) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .config-icon img {
+            width: 50px;
+            height: 50px;
+            object-fit: contain;
+        }
+        .config-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--gray-800);
+            margin-bottom: 16px;
+        }
+        .config-info {
+            text-align: left;
+            background: var(--gray-50);
+            border-radius: 8px;
+            padding: 12px 16px;
+        }
+        .info-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--gray-100);
+            font-size: 14px;
+        }
+        .info-item:last-child {
+            border-bottom: none;
+        }
+        .info-label {
+            color: var(--gray-500);
+        }
+        .source-config {
+            border-top: 3px solid #4479A1;
+        }
+        .target-config {
+            border-top: 3px solid #4169E1;
+        }
+        .log-area {
+            background: var(--gray-50);
+            color: var(--gray-200);
+            padding: 12px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+            margin: 16px 0;
+            white-space: pre-wrap;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: white;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            width: 90%;
+            max-width: 800px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+        .modal-header {
+            padding: 16px 20px;
+            background: var(--primary);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        div#sync-modal > div.modal-content > div.modal-header {
+            background-color: #4074e2;
+        }
+        .modal-header h3 {
+            margin: 0;
+            font-size: 16px;
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+        }
+        .modal-body {
+            padding: 20px;
+            flex: 1;
+            overflow-y: auto;
+        }
+        .modal-footer {
+            padding: 16px 20px;
+            border-top: 1px solid var(--gray-100);
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+        }
+
+        .space-y-4 > * { margin-bottom: 16px; }
+        .flex { display: flex; }
+        .flex-col { flex-direction: column; }
+        .items-center { align-items: center; }
+        .justify-between { justify-content: space-between; }
+        .justify-center { justify-content: center; }
+        .gap-4 { gap: 16px; }
+        .gap-2 { gap: 8px; }
+        .w-full { width: 100%; }
+        .text-right { text-align: right; }
+        .text-danger { color: var(--danger); }
+        .text-success { color: var(--success); }
+        .text-primary { color: var(--primary); }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 640px) {
+            .form-row { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <div class="header-title">数据迁移配置</div>
+        <div class="header-actions" style="display: flex; gap: 12px;">
+            <button class="btn btn-secondary" style="padding: 8px 20px; background: rgba(255,255,255,0.2); color: white; border: none; border-radius: 6px; cursor: pointer;" onclick="goBack()">返回首页</button>
+            <button id="btn-start-sync" class="btn btn-primary" style="padding: 8px 20px; background: white; color: #2563eb; border: none; border-radius: 6px; cursor: pointer; font-weight: 500;" onclick="startSync()">开始同步</button>
+        </div>
+    </header>
+
+    <main class="main">
+        <div class="section">
+            <div class="section-header">一、数据源配置</div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div class="form-group">
+                        <div class="flex items-center justify-between">
+                            <span class="form-label">源数据库</span>
+                            <span class="status-badge status-danger" id="source-status">未连接</span>
+                        </div>
+                        <input type="text" class="form-input" id="source-host" placeholder="主机地址" value="localhost">
+                        <input type="text" class="form-input" id="source-port" placeholder="端口" value="3306">
+                        <select class="form-select" id="source-db"></select>
+                        <input type="text" class="form-input" id="source-user" placeholder="用户名">
+                        <input type="password" class="form-input" id="source-password" placeholder="密码">
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <button class="btn btn-primary btn-sm" onclick="connectSource()">连接测试</button>
+                            <button id="save-source-config" class="btn btn-secondary btn-sm">保存配置</button>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <div class="flex items-center justify-between">
+                            <span class="form-label">目标数据库</span>
+                            <span class="status-badge status-danger" id="target-status">未连接</span>
+                        </div>
+                        <input type="text" class="form-input" id="target-host" placeholder="主机地址" value="localhost">
+                        <input type="text" class="form-input" id="target-port" placeholder="端口" value="3306">
+                        <select class="form-select" id="target-db"></select>
+                        <input type="text" class="form-input" id="target-user" placeholder="用户名">
+                        <input type="password" class="form-input" id="target-password" placeholder="密码">
+                        <div style="display: flex; gap: 8px; margin-top: 8px;">
+                            <button class="btn btn-primary btn-sm" onclick="connectTarget()">连接测试</button>
+                            <button id="save-target-config" class="btn btn-secondary btn-sm">保存配置</button>
+                        </div>
+                    </div>
+                </div>
+                <div style="text-align: center;">
+                    <button class="btn btn-secondary" onclick="showConfigModal()">选择配置</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="config-modal" class="modal" style="display: none;">
+            <div class="modal-content" style="max-width: 700px;">
+                <div class="modal-header">
+                    <h3>数据库配置</h3>
+                    <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div id="config-list-container" style="max-height: 400px; overflow-y: auto;">
+                        <div style="text-align: center; color: #9ca3af; padding: 40px;">暂无保存的配置</div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-secondary" onclick="closeConfigModal()">关闭</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="section" id="saved-configs-section" style="display: none;">
+            <div class="section-header">已保存的数据源配置</div>
+            <div class="section-body">
+                <div class="config-cards">
+                    <div class="config-card source-config">
+                        <div class="config-icon">
+                            <img src="file:///Users/weichengli/Documents/picture/mysql.png" alt="源数据库" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27%234479A1%27%3E%3Cpath d=%27M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l4-2.18L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z%27/%3E%3C/svg%3E'">
+                        </div>
+                        <div class="config-title">源数据库</div>
+                        <div class="config-info">
+                            <div class="info-item"><span class="info-label">主机：</span><span id="saved-source-host">-</span></div>
+                            <div class="info-item"><span class="info-label">端口：</span><span id="saved-source-port">-</span></div>
+                            <div class="info-item"><span class="info-label">数据库：</span><span id="saved-source-db">-</span></div>
+                            <div class="info-item"><span class="info-label">用户名：</span><span id="saved-source-user">-</span></div>
+                        </div>
+                    </div>
+                    <div class="config-card target-config">
+                        <div class="config-icon">
+                            <img src="file:///Users/weichengli/Documents/picture/postgresql.png" alt="目标数据库" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27 fill=%27%234169E1%27%3E%3Cpath d=%27M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l4-2.18L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v3.72L12 15l5-2.73v3.72z%27/%3E%3C/svg%3E'">
+                        </div>
+                        <div class="config-title">目标数据库</div>
+                        <div class="config-info">
+                            <div class="info-item"><span class="info-label">主机：</span><span id="saved-target-host">-</span></div>
+                            <div class="info-item"><span class="info-label">端口：</span><span id="saved-target-port">-</span></div>
+                            <div class="info-item"><span class="info-label">数据库：</span><span id="saved-target-db">-</span></div>
+                            <div class="info-item"><span class="info-label">用户名：</span><span id="saved-target-user">-</span></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">二、表映射配置</div>
+            <div class="section-body">
+                <div class="form-row">
+                    <div>
+                        <label class="form-label">源表</label>
+                        <input type="text" class="form-input" id="source-table-search" placeholder="搜索表名..." oninput="filterSourceTables()">
+                        <select class="form-select" id="source-table" onchange="loadSourceColumns()" style="margin-top: 8px;">
+                            <option value="">选择源表</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label">目标表</label>
+                        <input type="text" class="form-input" id="target-table-search" placeholder="搜索表名..." oninput="filterTargetTables()">
+                        <select class="form-select" id="target-table" onchange="loadTargetColumns()" style="margin-top: 8px;">
+                            <option value="">选择目标表</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between" style="margin-top: 20px;">
+                    <span style="font-weight: 600;">字段映射</span>
+                    <div class="flex gap-2">
+                        <button class="btn btn-secondary btn-sm" onclick="autoMapColumns()" id="btn-auto-map">自动映射</button>
+                        <button class="btn btn-secondary btn-sm" onclick="addEmptyColumnMapping()" id="btn-add-column">添加字段</button>
+                        <button class="btn btn-primary btn-sm" onclick="saveColumnMappings()" id="btn-save-mapping">保存</button>
+                        <button class="btn btn-secondary btn-sm" onclick="editColumnMappings()" id="btn-edit-mapping" style="display: none;">修改</button>
+                    </div>
+                </div>
+
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width: 32px;"></th>
+                            <th>源字段</th>
+                            <th>目标字段</th>
+                            <th>类型</th>
+                            <th>默认值</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="column-mapping-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">三、同步选项</div>
+            <div class="section-body space-y-4">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">批量大小</label>
+                        <input type="number" class="form-input" id="batch-size" value="1000" min="100" max="10000">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">时间格式</label>
+                        <select class="form-select" id="time-format">
+                            <option value="%Y-%m-%d %H:%M:%S">YYYY-MM-DD HH:MM:SS</option>
+                            <option value="%Y-%m-%d">YYYY-MM-DD</option>
+                            <option value="%Y%m%d">YYYYMMDD</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <div class="flex items-center justify-between">
+                        <label class="form-label">SQL限制条件</label>
+                        <button class="btn btn-secondary btn-sm" onclick="saveSqlCondition()">保存条件</button>
+                    </div>
+                    <textarea class="form-input form-textarea" id="sql-where" placeholder="例如: created_at >= '2024-01-01'"></textarea>
+                    <div style="margin-top: 8px;">
+                        <span style="font-size: 12px; color: var(--gray-500);">历史条件:</span>
+                        <div id="sql-history" style="margin-top: 4px; display: flex; flex-wrap: gap-2;"></div>
+                    </div>
+                </div>
+
+                <div style="padding: 16px; background: var(--gray-50); border-radius: var(--radius);">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="delete-before-insert" onchange="toggleDeleteCondition()">
+                        <span style="font-weight: 500;">插入前删除数据</span>
+                    </label>
+                    <div id="delete-condition-container" style="display: none; margin-top: 12px; padding-left: 20px;">
+                        <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                            <select class="form-select" id="delete-field">
+                                <option value="">选择字段</option>
+                            </select>
+                            <input type="text" class="form-input" id="delete-value" placeholder="条件值">
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 16px; background: var(--gray-50); border-radius: var(--radius);">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="add-partition" onchange="togglePartitionOptions()">
+                        <span style="font-weight: 500;">添加分区</span>
+                    </label>
+                    <div id="partition-options-container" style="display: none; margin-top: 12px; padding-left: 20px;">
+                        <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                            <input type="text" class="form-input" id="partition-date" placeholder="分区时间 (YYYYMM)" maxlength="6">
+                            <input type="text" class="form-input" id="partition-name" placeholder="分区名称">
+                            <select class="form-select" id="partition-field">
+                                <option value="">选择字段</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="padding: 16px; background: var(--primary-light); border-radius: var(--radius);">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="enable-vmonth" onchange="toggleVmonthOptions()">
+                        <span style="font-weight: 500;">启用 v_month 字段填充</span>
+                    </label>
+                    <div id="vmonth-options-container" style="display: none; margin-top: 12px; padding-left: 20px;">
+                        <div class="form-row" style="grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));">
+                            <select class="form-select" id="source-time-field">
+                                <option value="">源表筛选字段</option>
+                            </select>
+                            <input type="text" class="form-input" id="target-month-field" value="v_month" placeholder="目标表月份字段">
+                            <input type="text" class="form-input" id="target-month-value" placeholder="月份值 (YYYYMM)">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <div class="section-header">四、同步进度</div>
+            <div class="section-body">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-sm">
+                    <span id="progress-text">0%</span>
+                    <span id="inserted-count">已插入 0 条</span>
+                </div>
+
+                <div class="log-area" id="sync-log"></div>
+            </div>
+        </div>
+    </main>
+
+    <div id="sync-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>数据同步进度</h3>
+                <button class="modal-close" onclick="closeSyncModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="modal-progress-fill" style="width: 0%"></div>
+                </div>
+                <div class="flex justify-between text-sm mb-4">
+                    <span id="modal-progress-text">0%</span>
+                    <span id="modal-inserted-count">已插入 0 条</span>
+                </div>
+                <div class="log-area" id="modal-sync-log"></div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-cancel-sync" class="btn btn-danger" onclick="cancelSync()">取消同步</button>
+                <button id="btn-close-modal" class="btn btn-primary" style="display: none;" onclick="closeSyncModal()">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sourceConnected = false, targetConnected = false;
+        let tableMappings = [], sourceSchema = [], targetSchema = [], sourceTables = [], targetTables = [];
+        let syncInterval = null;
+        let columnMappingsSaved = false;
+        let savedMappingsData = [];
+
+        function goBack() {
+            window.location.href = '/';
+        }
+
+        function updateAutoMapButtonState() {
+            const autoMapBtn = document.getElementById('btn-auto-map');
+            const addColumnBtn = document.getElementById('btn-add-column');
+            const sourceTable = document.getElementById('source-table').value;
+            const targetTable = document.getElementById('target-table').value;
+            
+            const shouldEnable = sourceTable && targetTable && sourceSchema.length > 0 && targetSchema.length > 0 && !columnMappingsSaved;
+            
+            if (autoMapBtn) {
+                autoMapBtn.disabled = !shouldEnable;
+            }
+            if (addColumnBtn) {
+                addColumnBtn.disabled = !shouldEnable;
+            }
+        }
+
+        function connectSource() {
+            fetch('/api/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getSourceConfig())
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    document.getElementById('source-status').className = 'status-badge status-success';
+                    document.getElementById('source-status').textContent = '已连接';
+                    sourceConnected = true;
+                    populateDropdown('source-db', d.databases);
+                    loadSourceTables();
+                } else alert('连接失败: ' + d.error);
+            });
+        }
+
+        function connectTarget() {
+            fetch('/api/connect', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getTargetConfig())
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    document.getElementById('target-status').className = 'status-badge status-success';
+                    document.getElementById('target-status').textContent = '已连接';
+                    targetConnected = true;
+                    populateDropdown('target-db', d.databases);
+                    loadTargetTables();
+                } else alert('连接失败: ' + d.error);
+            });
+        }
+
+        function loadSourceTables() {
+            fetch('/api/get_tables', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getSourceConfig())
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    sourceTables = d.tables;
+                    populateDropdown('source-table', d.tables);
+                }
+            });
+        }
+
+        function loadTargetTables() {
+            fetch('/api/get_tables', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(getTargetConfig())
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    targetTables = d.tables;
+                    populateDropdown('target-table', d.tables);
+                }
+            });
+        }
+
+        function filterSourceTables() {
+            const search = document.getElementById('source-table-search').value.toLowerCase();
+            const filtered = sourceTables.filter(t => t.toLowerCase().includes(search));
+            populateDropdown('source-table', filtered);
+        }
+
+        function filterTargetTables() {
+            const search = document.getElementById('target-table-search').value.toLowerCase();
+            const filtered = targetTables.filter(t => t.toLowerCase().includes(search));
+            populateDropdown('target-table', filtered);
+        }
+
+        function loadSourceColumns() {
+            const table = document.getElementById('source-table').value;
+            if (!table) return;
+            fetch('/api/get_schema', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...getSourceConfig(), table })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    sourceSchema = d.schema;
+                    const allFields = d.schema.map(c => c.field);
+                    populateDropdown('source-time-field', allFields);
+                    updateAutoMapButtonState();
+                }
+            });
+        }
+
+        function loadTargetColumns() {
+            const table = document.getElementById('target-table').value;
+            if (!table) return;
+            fetch('/api/get_schema', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...getTargetConfig(), table })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    targetSchema = d.schema;
+                    populateDropdown('delete-field', d.schema.map(c => c.field));
+                    populateDropdown('partition-field', d.schema.map(c => c.field));
+                    if (sourceSchema.length) {
+                        populateDropdown('source-time-field', sourceSchema.map(c => c.field));
+                    }
+                    updateColumnMappingDropdowns();
+                    updateAutoMapButtonState();
+                }
+            });
+        }
+
+        function updateColumnMappingDropdowns() {
+            const options = targetSchema.map(c => `<option value="${c.field}">${c.field}</option>`).join('');
+            document.querySelectorAll('#column-mapping-body select').forEach(select => {
+                const currentValue = select.value;
+                select.innerHTML = `<option value="">选择字段</option>${options}`;
+                if (currentValue) {
+                    select.value = currentValue;
+                }
+            });
+        }
+
+        function autoMapColumns() {
+            const sourceTable = document.getElementById('source-table').value;
+            const targetTable = document.getElementById('target-table').value;
+            
+            console.log('Auto mapping triggered');
+            console.log('Source table:', sourceTable);
+            console.log('Target table:', targetTable);
+            console.log('Source schema length:', sourceSchema.length);
+            console.log('Target schema length:', targetSchema.length);
+            
+            if (!sourceTable) {
+                alert('请先选择源表');
+                return;
+            }
+            if (!targetTable) {
+                alert('请先选择目标表');
+                return;
+            }
+            
+            if (!sourceSchema.length) {
+                alert('源表结构未加载，请重新选择源表');
+                return;
+            }
+            if (!targetSchema.length) {
+                alert('目标表结构未加载，请重新选择目标表');
+                return;
+            }
+            
+            const tbody = document.getElementById('column-mapping-body');
+            tbody.innerHTML = '';
+            sourceSchema.forEach(src => {
+                const tgt = targetSchema.find(c => c.field.toLowerCase() === src.field.toLowerCase());
+                const selectedValue = tgt?.field || '';
+                const options = targetSchema.map(c => 
+                    `<option value="${c.field}" ${c.field === selectedValue ? 'selected' : ''}>${c.field}</option>`
+                ).join('');
+                tbody.innerHTML += `<tr draggable="true" ondragstart="dragStart(event)" ondragover="dragOver(event)" ondrop="drop(event)">
+                    <td style="cursor: move; padding-right: 8px;">
+                        <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M11.293 17.293L12.707 18.707l5.414-5.414-5.414-5.414L9.878 11l3.414 3.414zm4.243-9.9a1 1 0 00-1.414 0l-4.829 4.828-4.828-4.828A1 1 0 002.707 8.707l5.5 5.5a1 1 0 001.414 0l7.5-7.5a1 1 0 000-1.414z"/>
+                        </svg>
+                    </td>
+                    <td><input class="form-input" value="${src.field}" readonly style="background: var(--gray-50);"></td>
+                    <td><select class="form-select">
+                        <option value="">选择字段</option>
+                        ${options}
+                    </select></td>
+                    <td><input class="form-input" value="${src.type}"></td>
+                    <td><input class="form-input" value="${src.default || ''}"></td>
+                    <td class="text-right"><button class="btn btn-danger btn-sm" onclick="deleteColumnRow(this)">删除</button></td>
+                </tr>`;
+            });
+            console.log('Auto mapping completed, rows created:', sourceSchema.length);
+        }
+
+        function addEmptyColumnMapping() {
+            const options = targetSchema.map(c => `<option value="${c.field}">${c.field}</option>`).join('');
+            const tbody = document.getElementById('column-mapping-body');
+            const newRow = document.createElement('tr');
+            newRow.setAttribute('draggable', 'true');
+            newRow.setAttribute('ondragstart', 'dragStart(event)');
+            newRow.setAttribute('ondragover', 'dragOver(event)');
+            newRow.setAttribute('ondrop', 'drop(event)');
+            newRow.innerHTML = `
+                <td style="cursor: move; padding-right: 8px;">
+                    <svg class="w-4 h-4 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M11.293 17.293L12.707 18.707l5.414-5.414-5.414-5.414L9.878 11l3.414 3.414zm4.243-9.9a1 1 0 00-1.414 0l-4.829 4.828-4.828-4.828A1 1 0 002.707 8.707l5.5 5.5a1 1 0 001.414 0l7.5-7.5a1 1 0 000-1.414z"/>
+                    </svg>
+                </td>
+                <td><input class="form-input" placeholder="源字段"></td>
+                <td><select class="form-select">
+                    <option value="">选择字段</option>
+                    ${options}
+                </select></td>
+                <td><input class="form-input" placeholder="类型"></td>
+                <td><input class="form-input" placeholder="默认值"></td>
+                <td class="text-right"><button class="btn btn-danger btn-sm" onclick="deleteColumnRow(this)">删除</button></td>
+            `;
+            const firstRow = tbody.querySelector('tr');
+            if (firstRow) {
+                tbody.insertBefore(newRow, firstRow);
+            } else {
+                tbody.appendChild(newRow);
+            }
+        }
+
+        let draggedRow = null;
+
+        function dragStart(event) {
+            draggedRow = event.target;
+            event.target.style.opacity = '0.5';
+        }
+
+        function dragOver(event) {
+            event.preventDefault();
+        }
+
+        function drop(event) {
+            event.preventDefault();
+            const targetRow = event.target.closest('tr');
+            if (draggedRow && targetRow && draggedRow !== targetRow) {
+                const tbody = document.getElementById('column-mapping-body');
+                const rows = Array.from(tbody.querySelectorAll('tr'));
+                const draggedIndex = rows.indexOf(draggedRow);
+                const targetIndex = rows.indexOf(targetRow);
+                if (draggedIndex < targetIndex) {
+                    tbody.insertBefore(draggedRow, targetRow.nextSibling);
+                } else {
+                    tbody.insertBefore(draggedRow, targetRow);
+                }
+            }
+            draggedRow.style.opacity = '1';
+            draggedRow = null;
+        }
+
+        function deleteColumnRow(el) { el.closest('tr').remove(); }
+
+        function saveColumnMappings() {
+            try {
+                const tbody = document.getElementById('column-mapping-body');
+                if (!tbody) {
+                    alert('错误：找不到字段映射表格');
+                    return;
+                }
+                
+                const rows = tbody.querySelectorAll('tr');
+                const mappings = [];
+                
+                rows.forEach(r => {
+                    const cells = r.querySelectorAll('td');
+                    const srcInput = cells[1] ? cells[1].querySelector('input') : null;
+                    const tgtSelect = cells[2] ? cells[2].querySelector('select') : null;
+                    const typeInput = cells[3] ? cells[3].querySelector('input') : null;
+                    const defInput = cells[4] ? cells[4].querySelector('input') : null;
+                    
+                    const src = srcInput ? srcInput.value : '';
+                    const tgt = tgtSelect ? tgtSelect.value : '';
+                    const type = typeInput ? typeInput.value : '';
+                    const def = defInput ? defInput.value : '';
+                    
+                    if (src && tgt) {
+                        mappings.push({ source_field: src, target_field: tgt, type: type, default_value: def });
+                    }
+                });
+                
+                savedMappingsData = mappings;
+                columnMappingsSaved = true;
+                
+                document.getElementById('btn-save-mapping').style.display = 'none';
+                document.getElementById('btn-edit-mapping').style.display = 'inline-block';
+                
+                const inputs = document.querySelectorAll('#column-mapping-body input, #column-mapping-body select');
+                inputs.forEach(el => { el.disabled = true; });
+                
+                updateAutoMapButtonState();
+                
+                alert('字段映射已保存！');
+            } catch (error) {
+                console.error('保存字段映射时出错:', error);
+                alert('保存字段映射时出错: ' + error.message);
+            }
+        }
+
+        function editColumnMappings() {
+            columnMappingsSaved = false;
+            document.getElementById('btn-save-mapping').style.display = 'inline-block';
+            document.getElementById('btn-edit-mapping').style.display = 'none';
+            const inputs = document.querySelectorAll('#column-mapping-body input, #column-mapping-body select');
+            inputs.forEach(el => { el.disabled = false; });
+            updateAutoMapButtonState();
+        }
+
+
+
+        function toggleDeleteCondition() {
+            document.getElementById('delete-condition-container').style.display = document.getElementById('delete-before-insert').checked ? 'block' : 'none';
+        }
+
+        function togglePartitionOptions() {
+            document.getElementById('partition-options-container').style.display = document.getElementById('add-partition').checked ? 'block' : 'none';
+        }
+
+        function toggleVmonthOptions() {
+            document.getElementById('vmonth-options-container').style.display = document.getElementById('enable-vmonth').checked ? 'block' : 'none';
+        }
+
+        document.getElementById('partition-date').addEventListener('input', function() {
+            document.getElementById('partition-name').value = this.value.length === 6 ? 'p' + this.value : '';
+        });
+
+        function saveSqlCondition() {
+            const condition = document.getElementById('sql-where').value.trim();
+            if (!condition) { alert('请输入SQL条件'); return; }
+            let history = JSON.parse(localStorage.getItem('sql_conditions') || '[]');
+            if (!history.includes(condition)) {
+                history.unshift(condition);
+                if (history.length > 10) history.pop();
+                localStorage.setItem('sql_conditions', JSON.stringify(history));
+            }
+            renderSqlHistory();
+            alert('条件已保存！');
+        }
+
+        function renderSqlHistory() {
+            const history = JSON.parse(localStorage.getItem('sql_conditions') || '[]');
+            const container = document.getElementById('sql-history');
+            container.innerHTML = history.map((cond, i) => {
+                const displayText = cond.substring(0, 30) + (cond.length > 30 ? '...' : '');
+                return `<button class="btn btn-secondary btn-sm" data-condition="${encodeURIComponent(cond)}" onclick="applySqlConditionFromBtn(this)">${displayText}<span class="ml-2 text-red-500 hover:text-red-700" onclick="event.stopPropagation(); deleteSqlCondition(${i})">×</span></button>`;
+            }).join('');
+        }
+
+        function applySqlConditionFromBtn(btn) {
+            document.getElementById('sql-where').value = decodeURIComponent(btn.getAttribute('data-condition'));
+        }
+
+        function deleteSqlCondition(index) {
+            let history = JSON.parse(localStorage.getItem('sql_conditions') || '[]');
+            history.splice(index, 1);
+            localStorage.setItem('sql_conditions', JSON.stringify(history));
+            renderSqlHistory();
+        }
+
+        function applySqlCondition(condition) {
+            document.getElementById('sql-where').value = condition;
+        }
+
+        function startSync() {
+            if (!sourceConnected || !targetConnected) { alert('请先连接数据库'); return; }
+            
+            const sourceTable = document.getElementById('source-table').value;
+            const targetTable = document.getElementById('target-table').value;
+            if (!sourceTable || !targetTable) { alert('请选择源表和目标表'); return; }
+            
+            const rows = document.querySelectorAll('#column-mapping-body tr');
+            if (rows.length === 0) { alert('请添加字段映射'); return; }
+            
+            const columnMappings = [];
+            rows.forEach(r => {
+                const cells = r.querySelectorAll('td');
+                const srcInput = cells[1] ? cells[1].querySelector('input') : null;
+                const tgtSelect = cells[2] ? cells[2].querySelector('select') : null;
+                const typeInput = cells[3] ? cells[3].querySelector('input') : null;
+                const defInput = cells[4] ? cells[4].querySelector('input') : null;
+                
+                const src = srcInput ? srcInput.value : '';
+                const tgt = tgtSelect ? tgtSelect.value : '';
+                const type = typeInput ? typeInput.value : '';
+                const def = defInput ? defInput.value : '';
+                
+                if (src && tgt) columnMappings.push({ source_field: src, target_field: tgt, type: type, default_value: def });
+            });
+            
+            if (columnMappings.length === 0) { alert('请添加有效的字段映射'); return; }
+
+            const data = {
+                source: getSourceConfig(),
+                target: getTargetConfig(),
+                tableMappings: [{ source_table: sourceTable, target_table: targetTable, column_mappings: columnMappings }],
+                options: {
+                    batch_size: parseInt(document.getElementById('batch-size').value),
+                    time_format: document.getElementById('time-format').value,
+                    delete_before_insert: document.getElementById('delete-before-insert').checked,
+                    delete_condition: document.getElementById('delete-field').value && document.getElementById('delete-value').value ? 
+                        `${document.getElementById('delete-field').value} = '${document.getElementById('delete-value').value}'` : null,
+                    sql_where: document.getElementById('sql-where').value.trim() || null,
+                    add_partition: document.getElementById('add-partition').checked,
+                    partition_date: document.getElementById('partition-date').value || null,
+                    partition_name: document.getElementById('partition-name').value || null,
+                    partition_field: document.getElementById('partition-field').value || null,
+                    enable_vmonth: document.getElementById('enable-vmonth').checked,
+                    source_time_field: document.getElementById('source-time-field').value || null,
+                    target_month_field: document.getElementById('target-month-field').value || 'v_month',
+                    target_month_value: document.getElementById('target-month-value').value || null
+                }
+            };
+
+            document.getElementById('modal-sync-log').textContent = '';
+            document.getElementById('modal-progress-fill').style.width = '0%';
+            document.getElementById('btn-cancel-sync').style.display = 'block';
+            document.getElementById('btn-close-modal').style.display = 'none';
+            document.getElementById('sync-modal').style.display = 'flex';
+
+            fetch('/api/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+            .then(r => r.json()).then(d => {
+                if (d.success) {
+                    document.getElementById('sync-log').textContent = '';
+                    document.getElementById('progress-fill').style.width = '0%';
+                    syncInterval = setInterval(checkSyncStatus, 1000);
+                } else {
+                    alert(d.message);
+                    closeSyncModal();
+                }
+            });
+        }
+
+        function closeSyncModal() {
+            document.getElementById('sync-modal').style.display = 'none';
+        }
+
+        function cancelSync() {
+            fetch('/api/sync_cancel', { method: 'POST' }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    clearInterval(syncInterval);
+                    closeSyncModal();
+                }
+            });
+        }
+
+        function checkSyncStatus() {
+            fetch('/api/sync_status').then(r => r.json()).then(d => {
+                document.getElementById('progress-fill').style.width = d.progress + '%';
+                document.getElementById('progress-text').textContent = d.progress + '%';
+                document.getElementById('inserted-count').textContent = '已插入 ' + d.total_inserted + ' 条';
+                
+                document.getElementById('modal-progress-fill').style.width = d.progress + '%';
+                document.getElementById('modal-progress-text').textContent = d.progress + '%';
+                document.getElementById('modal-inserted-count').textContent = '已插入 ' + d.total_inserted + ' 条';
+                
+                if (d.logs && d.logs.length > 0) {
+                    document.getElementById('sync-log').textContent = d.logs.join('\n');
+                    document.getElementById('sync-log').scrollTop = document.getElementById('sync-log').scrollHeight;
+                    
+                    document.getElementById('modal-sync-log').textContent = d.logs.join('\n');
+                    document.getElementById('modal-sync-log').scrollTop = document.getElementById('modal-sync-log').scrollHeight;
+                }
+                if (!d.running) {
+                    clearInterval(syncInterval);
+                    document.getElementById('btn-cancel-sync').style.display = 'none';
+                    document.getElementById('btn-close-modal').style.display = 'block';
+                }
+            });
+        }
+
+        function getSourceConfig() {
+            return {
+                host: document.getElementById('source-host').value,
+                port: document.getElementById('source-port').value,
+                database: document.getElementById('source-db').value,
+                user: document.getElementById('source-user').value,
+                password: document.getElementById('source-password').value
+            };
+        }
+
+        function getTargetConfig() {
+            return {
+                host: document.getElementById('target-host').value,
+                port: document.getElementById('target-port').value,
+                database: document.getElementById('target-db').value,
+                user: document.getElementById('target-user').value,
+                password: document.getElementById('target-password').value
+            };
+        }
+
+        function populateDropdown(id, items) {
+            const dropdown = document.getElementById(id);
+            dropdown.innerHTML = `<option value="">请选择...</option>` + items.map(i => `<option value="${i}">${i}</option>`).join('');
+        }
+
+        function saveDbConfig(type) {
+            console.log('saveDbConfig called with type:', type);
+            const name = prompt("请输入数据库配置名称：");
+            if (!name) return;
+            
+            let config = {};
+            
+            if (type === 'source') {
+                config.host = document.getElementById('source-host').value || '';
+                config.port = document.getElementById('source-port').value || '';
+                config.database = document.getElementById('source-db').value || '';
+                config.user = document.getElementById('source-user').value || '';
+                config.password = document.getElementById('source-password').value || '';
+            } else if (type === 'target') {
+                config.host = document.getElementById('target-host').value || '';
+                config.port = document.getElementById('target-port').value || '';
+                config.database = document.getElementById('target-db').value || '';
+                config.user = document.getElementById('target-user').value || '';
+                config.password = document.getElementById('target-password').value || '';
+            }
+            
+            const configs = JSON.parse(localStorage.getItem('db_configs_list') || '{}');
+            configs[name] = config;
+            localStorage.setItem('db_configs_list', JSON.stringify(configs));
+            alert(`数据库配置 "${name}" 已保存！`);
+        }
+
+        function showConfigModal() {
+            renderConfigLists();
+            document.getElementById('config-modal').style.display = 'flex';
+        }
+
+        function closeConfigModal() {
+            document.getElementById('config-modal').style.display = 'none';
+        }
+
+        function renderConfigLists() {
+            const configs = JSON.parse(localStorage.getItem('db_configs_list') || '{}');
+            const container = document.getElementById('config-list-container');
+            const configNames = Object.keys(configs);
+            
+            if (configNames.length === 0) {
+                container.innerHTML = '<div style="text-align: center; color: #9ca3af; padding: 40px;">暂无保存的配置</div>';
+                return;
+            }
+            
+            container.innerHTML = configNames.map(name => {
+                const config = configs[name];
+                return `
+                    <div style="background: #f9fafb; border-radius: 12px; padding: 16px; margin-bottom: 12px; border: 1px solid #e5e7eb; display: flex; gap: 16px;">
+                        <div style="width: 64px; height: 64px; background: #4CAF50; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="white" width="32" height="32">
+                                <path d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l4-2.18L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z"/>
+                            </svg>
+                        </div>
+                        <div style="flex: 1;">
+                            <div style="font-weight: 600; margin-bottom: 8px; font-size: 15px; color: #1a1a1a;">${name}</div>
+                            <div style="font-size: 13px; color: #6b7280;">
+                                <div style="margin-bottom: 4px;">
+                                    <span style="color: #9ca3af;">主机:</span>
+                                    <span style="margin-left: 8px;">${config.host || '-'}</span>
+                                </div>
+                                <div style="margin-bottom: 4px;">
+                                    <span style="color: #9ca3af;">端口:</span>
+                                    <span style="margin-left: 8px;">${config.port || '-'}</span>
+                                </div>
+                                <div style="margin-bottom: 4px;">
+                                    <span style="color: #9ca3af;">数据库:</span>
+                                    <span style="margin-left: 8px;">${config.database || '-'}</span>
+                                </div>
+                                <div style="margin-bottom: 4px;">
+                                    <span style="color: #9ca3af;">用户名:</span>
+                                    <span style="margin-left: 8px;">${config.user || '-'}</span>
+                                </div>
+                                <div>
+                                    <span style="color: #9ca3af;">密码:</span>
+                                    <span style="margin-left: 8px;">${config.password ? '******' : '-'}</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 8px; justify-content: center;">
+                            <button class="btn btn-primary btn-sm" onclick="applyConfig('${name}', 'source')">源</button>
+                            <button class="btn btn-secondary btn-sm" onclick="applyConfig('${name}', 'target')">目标</button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteConfig('${name}')">删除</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function applyConfig(name, targetType) {
+            const configs = JSON.parse(localStorage.getItem('db_configs_list') || '{}');
+            const config = configs[name];
+            
+            if (!config) {
+                alert('配置不存在');
+                return;
+            }
+            
+            if (targetType === 'source') {
+                document.getElementById('source-host').value = config.host || 'localhost';
+                document.getElementById('source-port').value = config.port || '3306';
+                document.getElementById('source-db').value = config.database || '';
+                document.getElementById('source-user').value = config.user || '';
+                document.getElementById('source-password').value = config.password || '';
+            } else {
+                document.getElementById('target-host').value = config.host || 'localhost';
+                document.getElementById('target-port').value = config.port || '3306';
+                document.getElementById('target-db').value = config.database || '';
+                document.getElementById('target-user').value = config.user || '';
+                document.getElementById('target-password').value = config.password || '';
+            }
+            
+            closeConfigModal();
+            alert(`已将配置 "${name}" 应用到${targetType === 'source' ? '源' : '目标'}数据库！`);
+        }
+
+        function deleteConfig(name) {
+            if (!confirm(`确定要删除配置 "${name}" 吗？`)) return;
+            
+            const configs = JSON.parse(localStorage.getItem('db_configs_list') || '{}');
+            if (configs[name]) {
+                delete configs[name];
+                localStorage.setItem('db_configs_list', JSON.stringify(configs));
+            }
+            renderConfigLists();
+        }
+
+        function saveDbConfigs() {
+            try {
+                const sourceHost = document.getElementById('source-host');
+                const sourcePort = document.getElementById('source-port');
+                const sourceDb = document.getElementById('source-db');
+                const sourceUser = document.getElementById('source-user');
+                const sourcePassword = document.getElementById('source-password');
+                
+                const targetHost = document.getElementById('target-host');
+                const targetPort = document.getElementById('target-port');
+                const targetDb = document.getElementById('target-db');
+                const targetUser = document.getElementById('target-user');
+                const targetPassword = document.getElementById('target-password');
+                
+                const config = {
+                    source: {
+                        host: sourceHost ? sourceHost.value : '',
+                        port: sourcePort ? sourcePort.value : '',
+                        database: sourceDb ? sourceDb.value : '',
+                        user: sourceUser ? sourceUser.value : '',
+                        password: sourcePassword ? sourcePassword.value : ''
+                    },
+                    target: {
+                        host: targetHost ? targetHost.value : '',
+                        port: targetPort ? targetPort.value : '',
+                        database: targetDb ? targetDb.value : '',
+                        user: targetUser ? targetUser.value : '',
+                        password: targetPassword ? targetPassword.value : ''
+                    }
+                };
+                
+                localStorage.setItem('db_configs', JSON.stringify(config));
+                
+                document.getElementById('saved-source-host').textContent = config.source.host || '-';
+                document.getElementById('saved-source-port').textContent = config.source.port || '-';
+                document.getElementById('saved-source-db').textContent = config.source.database || '-';
+                document.getElementById('saved-source-user').textContent = config.source.user || '-';
+                
+                document.getElementById('saved-target-host').textContent = config.target.host || '-';
+                document.getElementById('saved-target-port').textContent = config.target.port || '-';
+                document.getElementById('saved-target-db').textContent = config.target.database || '-';
+                document.getElementById('saved-target-user').textContent = config.target.user || '-';
+                
+                document.getElementById('saved-configs-section').style.display = 'block';
+                alert('数据源配置已保存！');
+            } catch (error) {
+                console.error('保存配置时出错:', error);
+                alert('保存数据源配置时出错: ' + error.message);
+            }
+        }
+
+        function loadSourceConfig() {
+            const config = JSON.parse(localStorage.getItem('db_configs') || '{}');
+            if (config.source) {
+                document.getElementById('source-host').value = config.source.host || 'localhost';
+                document.getElementById('source-port').value = config.source.port || '3306';
+                document.getElementById('source-db').value = config.source.database || '';
+                document.getElementById('source-user').value = config.source.user || '';
+                document.getElementById('source-password').value = config.source.password || '';
+            }
+        }
+
+        function loadTargetConfig() {
+            const config = JSON.parse(localStorage.getItem('db_configs') || '{}');
+            if (config.target) {
+                document.getElementById('target-host').value = config.target.host || 'localhost';
+                document.getElementById('target-port').value = config.target.port || '3306';
+                document.getElementById('target-db').value = config.target.database || '';
+                document.getElementById('target-user').value = config.target.user || '';
+                document.getElementById('target-password').value = config.target.password || '';
+            }
+        }
+
+        document.getElementById('source-db').addEventListener('change', loadSourceTables);
+        document.getElementById('target-db').addEventListener('change', loadTargetTables);
+        renderSqlHistory();
+        loadSourceConfig();
+        loadTargetConfig();
+        
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('save-source-config').addEventListener('click', function() {
+                saveDbConfig('source');
+            });
+            document.getElementById('save-target-config').addEventListener('click', function() {
+                saveDbConfig('target');
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+default:
+  batch_size: 1000
+  fetch_size: 1000
+  time_format: "%Y-%m-%d %H:%M:%S"
+  delete_before_insert: false
+  create_partition: false
+  add_partition: false

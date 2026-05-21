@@ -1,0 +1,5 @@
+Flask>=2.3.3
+mysql-connector-python>=8.0.32
+PyYAML>=6.0
+python-dateutil>=2.8.2
+flask-cors>=4.0.0
