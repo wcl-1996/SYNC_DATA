@@ -824,6 +824,33 @@
                         </div>
                     </div>
                 </div>
+                <!-- 推送配置 -->
+                <div class="component-group">
+                    <div class="group-header" onclick="toggleGroup(this)">
+                        <span class="group-title">推送配置</span>
+                        <svg class="group-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </div>
+                    <div class="component-grid">
+                        <div class="component-item" onclick="selectComponent('push-config')" id="comp-push-config">
+                            <div class="component-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                                    <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/>
+                                </svg>
+                            </div>
+                            <span class="component-name">钉钉推送</span>
+                        </div>
+                        <div class="component-item" onclick="selectComponent('push-history')" id="comp-push-history">
+                            <div class="component-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                                </svg>
+                            </div>
+                            <span class="component-name">推送记录</span>
+                        </div>
+                    </div>
+                </div>
                 <!-- 数据库类型图标 -->
                 <div class="component-group">
                     <div class="group-header" onclick="toggleGroup(this)">
@@ -1054,6 +1081,21 @@
                         <button class="btn btn-danger btn-sm" onclick="clearAllHistory()">清空历史</button>
                     `;
                     contentEl.innerHTML = renderSyncHistoryContent();
+                    break;
+                case 'push-config':
+                    titleEl.textContent = '钉钉推送配置';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="testDingTalkConnection()">测试连接</button>
+                        <button class="btn btn-primary btn-sm" onclick="savePushConfig()">保存配置</button>
+                    `;
+                    contentEl.innerHTML = renderPushConfigContent();
+                    break;
+                case 'push-history':
+                    titleEl.textContent = '推送记录';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-danger btn-sm" onclick="clearPushHistory()">清空记录</button>
+                    `;
+                    contentEl.innerHTML = renderPushHistoryContent();
                     break;
             }
         }
@@ -1989,6 +2031,267 @@
             }, 100);
             
             closeConfigModal();
+        }
+
+        // ==================== 钉钉推送功能 ====================
+        function renderPushConfigContent() {
+            const pushConfig = JSON.parse(localStorage.getItem('dingtalk_push_config') || '{}');
+            
+            return `
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <span>钉钉机器人配置</span>
+                        <a href="https://help.dingtalk.com/document/detail/robot/create-and-use-robot" target="_blank" style="font-size: 12px; color: var(--primary);">如何获取Webhook？</a>
+                    </div>
+                    <div class="form-section-body">
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label">Webhook 地址</label>
+                            <input type="text" class="form-input" id="dingtalk-webhook" 
+                                placeholder="https://oapi.dingtalk.com/robot/send?access_token=xxx" 
+                                value="${pushConfig.webhook || ''}">
+                            <div class="form-hint">钉钉群机器人 → 设置 → 自定义机器人 → Webhook地址</div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label">加签密钥 (Secret)</label>
+                            <input type="text" class="form-input" id="dingtalk-secret" 
+                                placeholder="SECxxx..." 
+                                value="${pushConfig.secret || ''}">
+                            <div class="form-hint">可选，如果机器人启用了加签验证则需要填写</div>
+                        </div>
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label">消息模板</label>
+                            <textarea class="form-input form-textarea" id="dingtalk-template" 
+                                placeholder="数据迁移完成！\n源表: {source_table}\n目标表: {target_table}\n迁移条数: {count}\n文档链接: {doc_url}">${pushConfig.template || '数据迁移完成！\\n源表: {source_table}\\n目标表: {target_table}\\n迁移条数: {count}\\n文档链接: {doc_url}'}</textarea>
+                            <div class="form-hint">支持变量: {source_table}, {target_table}, {count}, {doc_url}, {time}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <div class="form-section-header">腾讯文档配置 (可选)</div>
+                    <div class="form-section-body">
+                        <div class="form-group" style="margin-bottom: 16px;">
+                            <label class="form-label">推送方式</label>
+                            <select class="form-select" id="push-method" onchange="togglePushMethodOptions()">
+                                <option value="link" ${(!pushConfig.pushMethod || pushConfig.pushMethod === 'link') ? 'selected' : ''}>链接推送 (上传到腾讯文档)</option>
+                                <option value="text" ${pushConfig.pushMethod === 'text' ? 'selected' : ''}>文本推送 (直接发送结果)</option>
+                                <option value="markdown" ${pushConfig.pushMethod === 'markdown' ? 'selected' : ''}>Markdown推送 (格式化消息)</option>
+                            </select>
+                        </div>
+                        <div id="tencent-doc-config" style="${pushConfig.pushMethod === 'text' || pushConfig.pushMethod === 'markdown' ? 'display: none;' : ''}">
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label class="form-label">腾讯文档 App ID</label>
+                                <input type="text" class="form-input" id="tencent-app-id" 
+                                    placeholder="可选，用于上传到腾讯文档" 
+                                    value="${pushConfig.tencentAppId || ''}">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 16px;">
+                                <label class="form-label">腾讯文档 App Secret</label>
+                                <input type="password" class="form-input" id="tencent-app-secret" 
+                                    placeholder="可选" 
+                                    value="${pushConfig.tencentAppSecret || ''}">
+                            </div>
+                        </div>
+                        <div class="switch-wrapper mb-4">
+                            <label class="switch">
+                                <input type="checkbox" id="auto-push-after-sync" ${pushConfig.autoPush ? 'checked' : ''}>
+                                <span class="switch-slider"></span>
+                            </label>
+                            <span>同步完成后自动推送</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="form-section">
+                    <div class="form-section-header">推送测试</div>
+                    <div class="form-section-body">
+                        <button class="btn btn-primary" onclick="sendTestPush()" style="width: 100%;">
+                            发送测试消息
+                        </button>
+                        <div id="push-test-result" style="margin-top: 16px; display: none;" class="form-hint"></div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function togglePushMethodOptions() {
+            const method = document.getElementById('push-method').value;
+            const config = document.getElementById('tencent-doc-config');
+            if (config) {
+                config.style.display = method === 'link' ? '' : 'none';
+            }
+        }
+        
+        function savePushConfig() {
+            const config = {
+                webhook: document.getElementById('dingtalk-webhook')?.value || '',
+                secret: document.getElementById('dingtalk-secret')?.value || '',
+                template: document.getElementById('dingtalk-template')?.value || '',
+                pushMethod: document.getElementById('push-method')?.value || 'link',
+                tencentAppId: document.getElementById('tencent-app-id')?.value || '',
+                tencentAppSecret: document.getElementById('tencent-app-secret')?.value || '',
+                autoPush: document.getElementById('auto-push-after-sync')?.checked || false
+            };
+            localStorage.setItem('dingtalk_push_config', JSON.stringify(config));
+            alert('推送配置已保存！');
+        }
+        
+        function testDingTalkConnection() {
+            const webhook = document.getElementById('dingtalk-webhook')?.value;
+            const secret = document.getElementById('dingtalk-secret')?.value;
+            
+            if (!webhook) {
+                alert('请先填写 Webhook 地址');
+                return;
+            }
+            
+            fetch('/api/dingtalk/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ webhook, secret })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    alert('连接测试成功！钉钉群应收到测试消息');
+                } else {
+                    alert('连接测试失败: ' + d.error);
+                }
+            });
+        }
+        
+        function sendTestPush() {
+            const config = {
+                webhook: document.getElementById('dingtalk-webhook')?.value,
+                secret: document.getElementById('dingtalk-secret')?.value,
+                template: document.getElementById('dingtalk-template')?.value,
+                pushMethod: document.getElementById('push-method')?.value || 'text'
+            };
+            
+            if (!config.webhook) {
+                alert('请先填写 Webhook 地址');
+                return;
+            }
+            
+            const resultEl = document.getElementById('push-test-result');
+            resultEl.style.display = 'block';
+            resultEl.innerHTML = '正在发送测试消息...';
+            
+            const testData = {
+                source_table: 'test_source_table',
+                target_table: 'test_target_table',
+                count: 1234,
+                doc_url: 'https://docs.qq.com/doc/test',
+                time: new Date().toLocaleString('zh-CN')
+            };
+            
+            fetch('/api/dingtalk/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...config, data: testData })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    resultEl.innerHTML = '<span style="color: var(--success);">✓ 测试消息发送成功！请检查钉钉群消息。</span>';
+                    // 保存推送记录
+                    savePushHistory({
+                        time: new Date().toLocaleString('zh-CN'),
+                        status: 'success',
+                        method: config.pushMethod,
+                        message: '测试消息'
+                    });
+                } else {
+                    resultEl.innerHTML = '<span style="color: var(--danger);">✗ 发送失败: ' + d.error + '</span>';
+                }
+            }).catch(e => {
+                resultEl.innerHTML = '<span style="color: var(--danger);">✗ 请求失败: ' + e.message + '</span>';
+            });
+        }
+        
+        function renderPushHistoryContent() {
+            const history = JSON.parse(localStorage.getItem('push_history') || '[]');
+            
+            if (history.length === 0) {
+                return '<div style="text-align: center; color: var(--gray-400); padding: 60px 20px;"><svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" stroke-width="1.5" style="margin-bottom: 16px;"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg><div>暂无推送记录</div></div>';
+            }
+            
+            return history.map((item, index) => `
+                <div class="history-item">
+                    <button class="delete-btn" onclick="deletePushHistoryItem(${index})" title="删除">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                    <div class="history-item-header">
+                        <div class="history-item-title">${item.message || '推送消息'}</div>
+                        <span class="history-item-status history-status-${item.status}">${item.status === 'success' ? '成功' : '失败'}</span>
+                    </div>
+                    <div class="history-item-time">${item.time}</div>
+                    <div class="history-item-info" style="margin-top: 8px;">
+                        <span>📤 推送方式: ${getPushMethodName(item.method)}</span>
+                    </div>
+                </div>
+            `).join('');
+        }
+        
+        function getPushMethodName(method) {
+            const names = { 'link': '链接推送', 'text': '文本推送', 'markdown': 'Markdown推送' };
+            return names[method] || method;
+        }
+        
+        function savePushHistory(item) {
+            let history = JSON.parse(localStorage.getItem('push_history') || '[]');
+            history.unshift(item);
+            if (history.length > 50) history = history.slice(0, 50);
+            localStorage.setItem('push_history', JSON.stringify(history));
+        }
+        
+        function deletePushHistoryItem(index) {
+            if (!confirm('确定要删除这条推送记录吗？')) return;
+            let history = JSON.parse(localStorage.getItem('push_history') || '[]');
+            history.splice(index, 1);
+            localStorage.setItem('push_history', JSON.stringify(history));
+            if (currentComponent === 'push-history') updateConfigPanel();
+        }
+        
+        function clearPushHistory() {
+            if (!confirm('确定要清空所有推送记录吗？')) return;
+            localStorage.removeItem('push_history');
+            if (currentComponent === 'push-history') updateConfigPanel();
+        }
+        
+        // 执行推送（同步完成后调用）
+        function executePush(insertedCount, sourceTable, targetTable) {
+            const pushConfig = JSON.parse(localStorage.getItem('dingtalk_push_config') || '{}');
+            
+            if (!pushConfig.webhook) {
+                console.log('未配置钉钉推送，跳过推送');
+                return;
+            }
+            
+            const data = {
+                source_table: sourceTable,
+                target_table: targetTable,
+                count: insertedCount,
+                doc_url: '',
+                time: new Date().toLocaleString('zh-CN')
+            };
+            
+            // 如果是链接推送模式，先上传到腾讯文档
+            if (pushConfig.pushMethod === 'link' && pushConfig.tencentAppId) {
+                // TODO: 实现腾讯文档上传
+                console.log('上传到腾讯文档...');
+            }
+            
+            fetch('/api/dingtalk/push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ...pushConfig, data })
+            }).then(r => r.json()).then(d => {
+                savePushHistory({
+                    time: new Date().toLocaleString('zh-CN'),
+                    status: d.success ? 'success' : 'failed',
+                    method: pushConfig.pushMethod,
+                    message: `${sourceTable} → ${targetTable} (${insertedCount}条)`
+                });
+            });
         }
 
         // ==================== 初始化 ====================

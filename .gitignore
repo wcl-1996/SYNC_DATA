@@ -88,3 +88,7 @@ logs/
 *.pptx
 *.xlsx
 *.csv
+.cozeproj/reduction
+
+# Preview files
+.preview

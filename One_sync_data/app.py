@@ -709,6 +709,139 @@ def cancel_sync():
     else:
         return jsonify({'success': False, 'message': 'No sync running'})
 
+# ==================== 钉钉推送功能 ====================
+import hmac
+import hashlib
+import base64
+import time
+import urllib.parse
+import requests
+
+@app.route('/api/dingtalk/test', methods=['POST'])
+def test_dingtalk():
+    """测试钉钉机器人连接"""
+    try:
+        data = request.json
+        webhook = data.get('webhook', '')
+        secret = data.get('secret', '')
+        
+        if not webhook:
+            return jsonify({'success': False, 'error': 'Webhook 地址不能为空'})
+        
+        # 发送测试消息
+        message = {
+            "msgtype": "text",
+            "text": {
+                "content": "【数据迁移系统】连接测试成功！\n测试时间: " + datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            }
+        }
+        
+        result = send_dingtalk_message(webhook, secret, message)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/dingtalk/push', methods=['POST'])
+def push_to_dingtalk():
+    """推送消息到钉钉"""
+    try:
+        config = request.json
+        webhook = config.get('webhook', '')
+        secret = config.get('secret', '')
+        push_method = config.get('pushMethod', 'text')
+        template = config.get('template', '')
+        data = config.get('data', {})
+        
+        if not webhook:
+            return jsonify({'success': False, 'error': 'Webhook 地址不能为空'})
+        
+        # 替换模板变量
+        content = template
+        content = content.replace('{source_table}', str(data.get('source_table', '')))
+        content = content.replace('{target_table}', str(data.get('target_table', '')))
+        content = content.replace('{count}', str(data.get('count', 0)))
+        content = content.replace('{doc_url}', str(data.get('doc_url', '')))
+        content = content.replace('{time}', str(data.get('time', '')))
+        
+        # 根据推送方式构建消息
+        if push_method == 'markdown':
+            message = {
+                "msgtype": "markdown",
+                "markdown": {
+                    "title": "数据迁移通知",
+                    "text": content
+                }
+            }
+        elif push_method == 'link':
+            doc_url = data.get('doc_url', '')
+            message = {
+                "msgtype": "link",
+                "link": {
+                    "title": "数据迁移完成",
+                    "text": content,
+                    "messageUrl": doc_url if doc_url else "https://www.dingtalk.com",
+                    "picUrl": ""
+                }
+            }
+        else:  # text
+            message = {
+                "msgtype": "text",
+                "text": {
+                    "content": content
+                }
+            }
+        
+        result = send_dingtalk_message(webhook, secret, message)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+def send_dingtalk_message(webhook, secret, message):
+    """发送钉钉消息"""
+    try:
+        url = webhook
+        
+        # 如果有加签密钥，计算签名
+        if secret:
+            timestamp = str(round(time.time() * 1000))
+            string_to_sign = timestamp + '\n' + secret
+            hmac_code = hmac.new(
+                secret.encode('utf-8'),
+                string_to_sign.encode('utf-8'),
+                digestmod=hashlib.sha256
+            ).digest()
+            sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+            url = f"{webhook}&timestamp={timestamp}&sign={sign}"
+        
+        response = requests.post(url, json=message, timeout=10)
+        result = response.json()
+        
+        if result.get('errcode') == 0:
+            return {'success': True, 'message': '发送成功'}
+        else:
+            return {'success': False, 'error': result.get('errmsg', '未知错误')}
+    except Exception as e:
+        return {'success': False, 'error': str(e)}
+
+@app.route('/api/tencent_doc/upload', methods=['POST'])
+def upload_to_tencent_doc():
+    """上传数据到腾讯文档（预留接口）"""
+    try:
+        data = request.json
+        app_id = data.get('appId', '')
+        app_secret = data.get('appSecret', '')
+        content = data.get('content', '')
+        
+        # TODO: 实现腾讯文档 API 调用
+        # 需要申请腾讯文档 API 权限
+        
+        return jsonify({
+            'success': False, 
+            'error': '腾讯文档功能暂未实现，请联系管理员开通 API 权限'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 if __name__ == '__main__':
     import os
     port = int(os.environ.get('DEPLOY_RUN_PORT', 5000))
