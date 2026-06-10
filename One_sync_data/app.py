@@ -48,13 +48,17 @@ class DBConnector:
         
         try:
             if self.db_type == 'mysql':
-                self.connection = mysql.connector.connect(
-                    host=host,
-                    port=int(port),
-                    database=database,
-                    user=user,
-                    password=password
-                )
+                connect_params = {
+                    'host': host,
+                    'port': int(port),
+                    'user': user,
+                    'password': password,
+                    'connect_timeout': 10,
+                    'charset': 'utf8mb4'
+                }
+                if database and database.strip():
+                    connect_params['database'] = database.strip()
+                self.connection = mysql.connector.connect(**connect_params)
                 if self.connection.is_connected():
                     self.cursor = self.connection.cursor(dictionary=True)
                     return {'success': True}
@@ -192,9 +196,36 @@ class DBConnector:
             return -1
 
     def get_databases(self):
-        query = "SHOW DATABASES"
-        result = self.fetch_all(query)
-        return [row['Database'] for row in result]
+        try:
+            if self.db_type == 'mysql':
+                query = "SHOW DATABASES"
+                result = self.fetch_all(query)
+                return [row['Database'] for row in result]
+            elif self.db_type == 'oracle':
+                query = "SELECT name FROM v$database"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            elif self.db_type == 'postgresql':
+                query = "SELECT datname FROM pg_database WHERE datistemplate = false"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            elif self.db_type == 'sqlserver':
+                query = "SELECT name FROM sys.databases WHERE database_id > 4"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            elif self.db_type == 'sqlite':
+                return ['main']
+            elif self.db_type == 'redis':
+                return ['0']
+            elif self.db_type == 'dameng':
+                query = "SELECT name FROM v$database"
+                result = self.fetch_all(query)
+                return [row[0] for row in result]
+            else:
+                return []
+        except Exception as e:
+            print(f"获取数据库列表失败: {e}")
+            return []
 
     def get_tables(self, database=None):
         try:
@@ -842,7 +873,267 @@ def upload_to_tencent_doc():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)})
 
+# ==================== SQL执行API ====================
+@app.route('/api/sql/execute', methods=['POST'])
+def execute_sql():
+    """执行SQL查询"""
+    try:
+        data = request.json
+        sql = data.get('sql', '')
+        db_config = data.get('db_config', {})
+        
+        if not sql:
+            return jsonify({'success': False, 'error': 'SQL语句不能为空'})
+        
+        if not db_config.get('host'):
+            return jsonify({'success': False, 'error': '请先配置并连接数据库'})
+        
+        # 创建数据库连接
+        db_type = db_config.get('db_type', 'mysql')
+        connector = DBConnector(
+            host=db_config.get('host'),
+            port=int(db_config.get('port', 3306)),
+            user=db_config.get('user'),
+            password=db_config.get('password'),
+            database=db_config.get('database'),
+            db_type=db_type
+        )
+        
+        # 执行查询
+        conn = connector.connect()
+        if not conn:
+            return jsonify({'success': False, 'error': '数据库连接失败'})
+        
+        cursor = conn.cursor(dictionary=True) if db_type == 'mysql' else conn.cursor()
+        cursor.execute(sql)
+        
+        # 获取结果
+        if cursor.description:
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchall()
+            
+            # 格式化数据
+            if db_type == 'mysql':
+                formatted_rows = rows
+            else:
+                formatted_rows = [dict(zip(columns, row)) for row in rows]
+            
+            cursor.close()
+            connector.close()
+            
+            return jsonify({
+                'success': True,
+                'columns': columns,
+                'rows': formatted_rows,
+                'count': len(formatted_rows)
+            })
+        else:
+            # 非 SELECT 语句
+            affected = cursor.rowcount
+            conn.commit()
+            cursor.close()
+            connector.close()
+            
+            return jsonify({
+                'success': True,
+                'affected_rows': affected,
+                'message': f'执行成功，影响 {affected} 行'
+            })
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+# ==================== 定时任务API ====================
+# 任务存储（生产环境应使用数据库）
+scheduled_tasks = {}
+task_scheduler = None
+
+def init_scheduler():
+    """初始化定时任务调度器"""
+    global task_scheduler
+    try:
+        from apscheduler.schedulers.background import BackgroundScheduler
+        from apscheduler.triggers.cron import CronTrigger
+        
+        task_scheduler = BackgroundScheduler()
+        task_scheduler.start()
+        return True
+    except ImportError:
+        print("警告: APScheduler 未安装，定时任务功能不可用")
+        return False
+
+@app.route('/api/task/create', methods=['POST'])
+def create_task():
+    """创建定时任务"""
+    try:
+        data = request.json
+        task_id = data.get('id')
+        name = data.get('name')
+        cron = data.get('cron')
+        task_type = data.get('type', 'sql_push')
+        sql = data.get('sql', '')
+        webhook = data.get('webhook')
+        secret = data.get('secret', '')
+        
+        if not all([task_id, name, cron, webhook]):
+            return jsonify({'success': False, 'error': '缺少必要参数'})
+        
+        # 保存任务信息
+        scheduled_tasks[task_id] = {
+            'id': task_id,
+            'name': name,
+            'cron': cron,
+            'type': task_type,
+            'sql': sql,
+            'webhook': webhook,
+            'secret': secret,
+            'status': 'active'
+        }
+        
+        # 如果调度器可用，添加定时任务
+        if task_scheduler:
+            try:
+                from apscheduler.triggers.cron import CronTrigger
+                
+                trigger = CronTrigger.from_crontab(cron.replace(' ', '')[0:-2], timezone='Asia/Shanghai')
+                
+                task_scheduler.add_job(
+                    execute_scheduled_task,
+                    trigger,
+                    id=str(task_id),
+                    args=[task_id],
+                    replace_existing=True
+                )
+            except Exception as e:
+                print(f"添加定时任务失败: {e}")
+        
+        return jsonify({'success': True, 'task_id': task_id})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+def execute_scheduled_task(task_id):
+    """执行定时任务"""
+    task = scheduled_tasks.get(task_id)
+    if not task:
+        return
+    
+    try:
+        # 执行SQL查询
+        if task['type'] == 'sql_push' and task['sql']:
+            # TODO: 从配置获取数据库连接
+            pass
+        
+        # 推送到钉钉
+        message = {
+            "msgtype": "text",
+            "text": {
+                "content": f"【定时任务执行】\n任务: {task['name']}\n时间: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            }
+        }
+        send_dingtalk_message(task['webhook'], task.get('secret', ''), message)
+        
+    except Exception as e:
+        print(f"定时任务执行失败: {e}")
+
+@app.route('/api/task/pause', methods=['POST'])
+def pause_task():
+    """暂停定时任务"""
+    try:
+        data = request.json
+        task_id = data.get('task_id')
+        
+        if task_id in scheduled_tasks:
+            scheduled_tasks[task_id]['status'] = 'paused'
+            
+            if task_scheduler:
+                task_scheduler.pause_job(str(task_id))
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/task/resume', methods=['POST'])
+def resume_task():
+    """恢复定时任务"""
+    try:
+        data = request.json
+        task_id = data.get('task_id')
+        
+        if task_id in scheduled_tasks:
+            scheduled_tasks[task_id]['status'] = 'active'
+            
+            if task_scheduler:
+                task_scheduler.resume_job(str(task_id))
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/task/delete', methods=['POST'])
+def delete_task():
+    """删除定时任务"""
+    try:
+        data = request.json
+        task_id = data.get('task_id')
+        
+        if task_id in scheduled_tasks:
+            del scheduled_tasks[task_id]
+            
+            if task_scheduler:
+                task_scheduler.remove_job(str(task_id))
+        
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
+@app.route('/api/cron/validate', methods=['POST'])
+def validate_cron():
+    """验证Cron表达式"""
+    try:
+        data = request.json
+        cron = data.get('cron', '')
+        
+        parts = cron.split()
+        if len(parts) != 6:
+            return jsonify({'success': False, 'error': 'Cron表达式需要6个部分（秒 分 时 日 月 星期）'})
+        
+        # 解析描述
+        sec, minute, hour, day, month, week = parts
+        desc = ''
+        
+        if week != '?' and week != '*':
+            week_names = {'MON': '周一', 'TUE': '周二', 'WED': '周三', 'THU': '周四', 
+                         'FRI': '周五', 'SAT': '周六', 'SUN': '周日'}
+            desc += f"每{week_names.get(week, week)}"
+        elif day != '*' and day != '?':
+            desc += f"每月{day}号"
+        else:
+            desc = "每天"
+        
+        if hour != '*' and hour != '?':
+            desc += f" {hour}点"
+        if minute != '*' and minute != '?':
+            desc += f"{minute}分"
+        
+        # 计算下次执行时间（简化版）
+        next_run = "请参考任务列表中的下次执行时间"
+        
+        return jsonify({
+            'success': True,
+            'description': desc + '执行',
+            'next_run': next_run
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)})
+
 if __name__ == '__main__':
     import os
+    import datetime
+    
+    # 初始化定时任务调度器
+    init_scheduler()
+    
     port = int(os.environ.get('DEPLOY_RUN_PORT', 5000))
     app.run(debug=False, host='0.0.0.0', port=port)

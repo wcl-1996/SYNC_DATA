@@ -691,6 +691,49 @@
             .db-info-grid { grid-template-columns: 1fr; }
         }
     </style>
+    <!-- SQL编辑器 - 使用轻量级实现，无需外部依赖 -->
+    <style>
+        /* SQL编辑器样式 - 轻量级实现 */
+        .sql-editor {
+            position: relative;
+            width: 100%;
+        }
+        .sql-textarea {
+            width: 100%;
+            min-height: 150px;
+            padding: 12px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius);
+            background: #1e1e1e;
+            color: #d4d4d4;
+            resize: vertical;
+            outline: none;
+            tab-size: 2;
+        }
+        .sql-textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+        }
+        .sql-toolbar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .sql-toolbar-btn {
+            padding: 4px 8px;
+            font-size: 12px;
+            background: var(--gray-100);
+            border: 1px solid var(--gray-300);
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .sql-toolbar-btn:hover {
+            background: var(--gray-200);
+        }
+    </style>
 </head>
 <body>
     <!-- 顶部导航栏 -->
@@ -821,6 +864,44 @@
                                 </svg>
                             </div>
                             <span class="component-name">历史记录</span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 定时任务 -->
+                <div class="component-group">
+                    <div class="group-header" onclick="toggleGroup(this)">
+                        <span class="group-title">定时任务</span>
+                        <svg class="group-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="6 9 12 15 18 9"/>
+                        </svg>
+                    </div>
+                    <div class="component-grid">
+                        <div class="component-item" onclick="selectComponent('task-list')" id="comp-task-list">
+                            <div class="component-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                                    <path d="M9 11l3 3L22 4"/>
+                                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+                                </svg>
+                            </div>
+                            <span class="component-name">任务列表</span>
+                        </div>
+                        <div class="component-item" onclick="selectComponent('task-config')" id="comp-task-config">
+                            <div class="component-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M12 1v6m0 6v6M1 12h6m6 0h6"/>
+                                </svg>
+                            </div>
+                            <span class="component-name">新建任务</span>
+                        </div>
+                        <div class="component-item" onclick="selectComponent('sql-params')" id="comp-sql-params">
+                            <div class="component-icon">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <path d="M12 6v6l4 2"/>
+                                </svg>
+                            </div>
+                            <span class="component-name">参数配置</span>
                         </div>
                     </div>
                 </div>
@@ -1096,6 +1177,42 @@
                         <button class="btn btn-danger btn-sm" onclick="clearPushHistory()">清空记录</button>
                     `;
                     contentEl.innerHTML = renderPushHistoryContent();
+                    break;
+                case 'sql-editor':
+                    titleEl.textContent = 'SQL查询编辑器';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="formatSql()">格式化</button>
+                        <button class="btn btn-primary btn-sm" onclick="executeSql()">执行查询</button>
+                    `;
+                    contentEl.innerHTML = renderSqlEditorContent();
+                    break;
+                case 'sql-params':
+                    titleEl.textContent = '参数配置';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="addNewParam()">添加参数</button>
+                        <button class="btn btn-primary btn-sm" onclick="saveParams()">保存配置</button>
+                    `;
+                    contentEl.innerHTML = renderSqlParamsContent();
+                    break;
+                case 'task-list':
+                    titleEl.textContent = '定时任务列表';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="refreshTaskList()">刷新</button>
+                    `;
+                    contentEl.innerHTML = renderTaskListContent();
+                    break;
+                case 'task-config':
+                    titleEl.textContent = '新建定时任务';
+                    actionsEl.innerHTML = `
+                        <button class="btn btn-secondary btn-sm" onclick="testCronExpression()">测试表达式</button>
+                        <button class="btn btn-primary btn-sm" onclick="saveTask()">保存任务</button>
+                    `;
+                    contentEl.innerHTML = renderTaskConfigContent();
+                    // 延迟初始化CodeMirror编辑器
+                    setTimeout(() => {
+                        initSqlEditor();
+                        initTaskSqlEditor();
+                    }, 100);
                     break;
             }
         }
@@ -2292,6 +2409,1154 @@
                     message: `${sourceTable} → ${targetTable} (${insertedCount}条)`
                 });
             });
+        }
+
+        // ==================== SQL查询功能 ====================
+        function renderSqlEditorContent() {
+            const savedSql = localStorage.getItem('sql_query') || 'SELECT * FROM users WHERE create_time >= \'${start_time}\' AND create_time < \'${end_time}\'';
+            const savedParams = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            
+            let paramsHtml = '';
+            if (savedParams.length > 0) {
+                paramsHtml = `<div class="form-section" style="margin-top: 16px;">
+                    <div class="form-section-header">当前参数值</div>
+                    <div class="form-section-body" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px;">
+                        ${savedParams.map(p => `<div style="padding: 8px; background: var(--gray-50); border-radius: 6px;">
+                            <div style="font-size: 12px; color: var(--gray-500);">${p.name}</div>
+                            <div style="font-weight: 500;">${p.displayValue || p.value}</div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+            }
+            
+            return `
+                <div class="form-section">
+                    <div class="form-section-header">
+                        <span>SQL查询语句</span>
+                        <div style="display: flex; gap: 8px;">
+                            <select id="sql-template-select" onchange="loadSqlTemplate()" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--gray-200);">
+                                <option value="">选择模板...</option>
+                                <option value="time_range">按时间范围查询</option>
+                                <option value="yesterday">昨日数据</option>
+                                <option value="last_month">上月数据</option>
+                                <option value="custom">自定义查询</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-section-body">
+                        <!-- SQL编辑器工具栏 -->
+                        <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+                            <button class="btn btn-primary btn-sm" onclick="executeSqlQuery()" title="执行查询">
+                                <!-- 播放/执行图标（三角形） -->
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 4px;">
+                                    <path d="M8 5v14l11-7z"/>
+                                </svg>
+                                执行查询
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="debugSqlQuery()" title="调试查询">
+                                <!-- 瓢虫/调试图标 -->
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                                    <circle cx="12" cy="12" r="3"/>
+                                    <path d="M12 1v4M12 19v4M1 12h4M19 12h4"/>
+                                    <path d="M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+                                </svg>
+                                调试
+                            </button>
+                            <button class="btn btn-secondary btn-sm" onclick="formatSql()" title="格式化SQL">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                                    <path d="M4 7h16M4 12h16M4 17h10"/>
+                                </svg>
+                                格式化
+                            </button>
+                            <span style="margin-left: auto; color: var(--gray-500); font-size: 12px;">
+                                支持 Ctrl+Enter 执行 | Ctrl+Space 补全
+                            </span>
+                        </div>
+                        <!-- CodeMirror SQL编辑器容器 -->
+                        <textarea id="sql-query-editor">${savedSql}</textarea>
+                        <div class="form-hint" style="margin-top: 8px;">
+                            支持的参数：<code style="background: var(--gray-100); padding: 2px 6px; border-radius: 3px;">\${start_time}</code> 开始时间, 
+                            <code style="background: var(--gray-100); padding: 2px 6px; border-radius: 3px;">\${end_time}</code> 结束时间, 
+                            <code style="background: var(--gray-100); padding: 2px 6px; border-radius: 3px;">\${current_time}</code> 当前时间
+                        </div>
+                    </div>
+                </div>
+                ${paramsHtml}
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-section-header">查询结果预览</div>
+                    <div class="form-section-body">
+                        <div id="sql-result-container" style="min-height: 100px; background: var(--gray-50); border-radius: 6px; padding: 12px; color: var(--gray-500);">
+                            点击"执行查询"按钮执行SQL语句
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        // CodeMirror SQL编辑器实例
+        let sqlEditor = null;
+        
+        // SQL关键字列表（用于简单高亮提示）
+        const SQL_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'NOT', 'IN', 'LIKE', 'BETWEEN', 
+            'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AS', 'ORDER', 'BY', 'GROUP', 'HAVING',
+            'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'DROP', 'ALTER', 'TABLE', 'INDEX', 'VIEW',
+            'DISTINCT', 'COUNT', 'SUM', 'AVG', 'MAX', 'MIN', 'LIMIT', 'OFFSET', 'UNION', 'ALL',
+            'NULL', 'IS', 'TRUE', 'FALSE', 'ASC', 'DESC', 'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES',
+            'INT', 'VARCHAR', 'TEXT', 'DATE', 'DATETIME', 'TIMESTAMP', 'BOOLEAN', 'FLOAT', 'DOUBLE'];
+        
+        // 轻量级SQL编辑器 - 不依赖外部库
+        function initSqlEditor() {
+            const textarea = document.getElementById('sql-query-editor');
+            if (!textarea) return;
+            
+            // 添加Tab键支持
+            textarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.selectionStart;
+                    const end = this.selectionEnd;
+                    this.value = this.value.substring(0, start) + '  ' + this.value.substring(end);
+                    this.selectionStart = this.selectionEnd = start + 2;
+                }
+                // Ctrl+Enter执行查询
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    executeSqlQuery();
+                }
+            });
+            
+            // 保存内容
+            textarea.addEventListener('input', function() {
+                localStorage.setItem('sql_query', this.value);
+            });
+            
+            sqlEditor = { 
+                getValue: () => textarea.value,
+                setValue: (v) => { textarea.value = v; },
+                focus: () => textarea.focus()
+            };
+        }
+        
+        // 任务SQL编辑器实例
+        let taskSqlEditor = null;
+        
+        function initTaskSqlEditor() {
+            const textarea = document.getElementById('task-sql');
+            if (!textarea) return;
+            
+            // 添加Tab键支持
+            textarea.addEventListener('keydown', function(e) {
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = this.selectionStart;
+                    const end = this.selectionEnd;
+                    this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+                    this.selectionStart = this.selectionEnd = start + 4;
+                }
+                // Ctrl+Enter测试查询
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                    e.preventDefault();
+                    testSqlQuery();
+                }
+            });
+            
+            taskSqlEditor = { 
+                getValue: () => textarea.value,
+                setValue: (v) => { textarea.value = v; },
+                focus: () => textarea.focus()
+            };
+        }
+        
+        function formatTaskSql() {
+            const textarea = document.getElementById('task-sql');
+            if (!textarea) return;
+            let sql = textarea.value;
+            // 简单的SQL格式化
+            sql = sql.replace(/\s+/g, ' ');
+            sql = sql.replace(/SELECT/gi, 'SELECT');
+            sql = sql.replace(/FROM/gi, '\nFROM');
+            sql = sql.replace(/WHERE/gi, '\nWHERE');
+            sql = sql.replace(/AND/gi, '\n  AND');
+            sql = sql.replace(/OR/gi, '\n  OR');
+            sql = sql.replace(/ORDER BY/gi, '\nORDER BY');
+            sql = sql.replace(/GROUP BY/gi, '\nGROUP BY');
+            sql = sql.replace(/LEFT JOIN/gi, '\nLEFT JOIN');
+            sql = sql.replace(/INNER JOIN/gi, '\nINNER JOIN');
+            sql = sql.replace(/RIGHT JOIN/gi, '\nRIGHT JOIN');
+            sql = sql.replace(/LIMIT/gi, '\nLIMIT');
+            textarea.value = sql.trim();
+        }
+        
+        function loadSqlTemplate() {
+            const template = document.getElementById('sql-template-select').value;
+            
+            const templates = {
+                time_range: `SELECT * FROM table_name 
+WHERE create_time >= '\${start_time}' 
+  AND create_time < '\${end_time}'`,
+                yesterday: `SELECT * FROM table_name 
+WHERE DATE(create_time) = DATE(DATE_SUB(NOW(), INTERVAL 1 DAY))`,
+                last_month: `SELECT * FROM table_name 
+WHERE YEAR(create_time) = YEAR(DATE_SUB(NOW(), INTERVAL 1 MONTH))
+  AND MONTH(create_time) = MONTH(DATE_SUB(NOW(), INTERVAL 1 MONTH))`,
+                custom: `SELECT * FROM table_name WHERE 1=1`
+            };
+            
+            if (template && templates[template]) {
+                if (sqlEditor) {
+                    sqlEditor.setValue(templates[template]);
+                } else {
+                    const editor = document.getElementById('sql-query-editor');
+                    if (editor) editor.value = templates[template];
+                }
+            }
+        }
+        
+        function formatSql() {
+            let sql = sqlEditor ? sqlEditor.getValue() : document.getElementById('sql-query-editor').value;
+            // 简单的SQL格式化
+            sql = sql.replace(/\s+/g, ' ');
+            sql = sql.replace(/SELECT/gi, 'SELECT');
+            sql = sql.replace(/FROM/gi, '\nFROM');
+            sql = sql.replace(/WHERE/gi, '\nWHERE');
+            sql = sql.replace(/AND/gi, '\n  AND');
+            sql = sql.replace(/OR/gi, '\n  OR');
+            sql = sql.replace(/ORDER BY/gi, '\nORDER BY');
+            sql = sql.replace(/GROUP BY/gi, '\nGROUP BY');
+            sql = sql.replace(/LEFT JOIN/gi, '\nLEFT JOIN');
+            sql = sql.replace(/INNER JOIN/gi, '\nINNER JOIN');
+            sql = sql.replace(/RIGHT JOIN/gi, '\nRIGHT JOIN');
+            sql = sql.replace(/LIMIT/gi, '\nLIMIT');
+            if (sqlEditor) {
+                sqlEditor.setValue(sql.trim());
+            } else {
+                document.getElementById('sql-query-editor').value = sql.trim();
+            }
+        }
+        
+        function executeSqlQuery() {
+            const sql = sqlEditor ? sqlEditor.getValue() : document.getElementById('sql-query-editor').value;
+            if (!sql.trim()) {
+                alert('请输入SQL查询语句');
+                return;
+            }
+            // 调用执行SQL的API
+            executeSql(sql);
+        }
+        
+        function debugSqlQuery() {
+            const sql = sqlEditor ? sqlEditor.getValue() : document.getElementById('sql-query-editor').value;
+            if (!sql.trim()) {
+                alert('请输入SQL查询语句');
+                return;
+            }
+            // 解析SQL参数并显示调试信息
+            const params = extractSqlParams(sql);
+            const paramValues = resolveTimeParams();
+            
+            let debugInfo = '【SQL调试信息】\n\n';
+            debugInfo += '原始SQL:\n' + sql + '\n\n';
+            debugInfo += '检测到的参数:\n';
+            params.forEach(p => {
+                debugInfo += `  ${p}: ${paramValues[p] || '(未配置)'}\n`;
+            });
+            debugInfo += '\n替换后的SQL:\n' + replaceSqlParams(sql, paramValues);
+            
+            document.getElementById('sql-result-container').innerHTML = 
+                '<pre style="margin: 0; white-space: pre-wrap; font-size: 12px;">' + debugInfo + '</pre>';
+        }
+        
+        function extractSqlParams(sql) {
+            const regex = /\$\{(\w+)\}/g;
+            const params = [];
+            let match;
+            while ((match = regex.exec(sql)) !== null) {
+                if (!params.includes(match[1])) {
+                    params.push(match[1]);
+                }
+            }
+            return params;
+        }
+        
+        function executeSql() {
+            const sql = document.getElementById('sql-query-editor').value;
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            
+            // 替换参数
+            let finalSql = sql;
+            params.forEach(p => {
+                finalSql = finalSql.replace(new RegExp('\\$\\{' + p.name + '\\}', 'g'), p.value);
+            });
+            
+            // 保存查询历史
+            const history = JSON.parse(localStorage.getItem('sql_history') || '[]');
+            history.unshift({
+                time: new Date().toLocaleString('zh-CN'),
+                sql: sql,
+                finalSql: finalSql
+            });
+            if (history.length > 20) history.pop();
+            localStorage.setItem('sql_history', JSON.stringify(history));
+            
+            // 显示执行中状态
+            document.getElementById('sql-result-container').innerHTML = `
+                <div style="text-align: center; padding: 20px;">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 12px;">正在执行查询...</p>
+                </div>
+            `;
+            
+            // 调用后端API执行SQL
+            const dbConfig = JSON.parse(localStorage.getItem('source_db_config') || '{}');
+            fetch('/api/sql/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sql: finalSql,
+                    db_config: dbConfig
+                })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    const columns = d.columns || [];
+                    const rows = d.rows || [];
+                    let html = `<div style="margin-bottom: 12px; color: var(--success);">查询成功，返回 ${rows.length} 条记录</div>`;
+                    html += '<div style="overflow-x: auto;"><table class="table"><thead><tr>';
+                    columns.forEach(col => html += `<th>${col}</th>`);
+                    html += '</tr></thead><tbody>';
+                    rows.slice(0, 100).forEach(row => {
+                        html += '<tr>';
+                        columns.forEach(col => html += `<td>${row[col] || '-'}</td>`);
+                        html += '</tr>';
+                    });
+                    html += '</tbody></table></div>';
+                    if (rows.length > 100) {
+                        html += `<div style="margin-top: 8px; color: var(--gray-500);">仅显示前 100 条记录</div>`;
+                    }
+                    document.getElementById('sql-result-container').innerHTML = html;
+                    
+                    // 保存查询结果供推送使用
+                    localStorage.setItem('last_query_result', JSON.stringify(d));
+                } else {
+                    document.getElementById('sql-result-container').innerHTML = `
+                        <div style="color: var(--danger);">查询失败: ${d.error}</div>
+                        <div style="margin-top: 8px; font-family: monospace; white-space: pre-wrap; background: #1e1e1e; color: #d4d4d4; padding: 12px; border-radius: 6px;">${finalSql}</div>
+                    `;
+                }
+            }).catch(e => {
+                document.getElementById('sql-result-container').innerHTML = `
+                    <div style="color: var(--danger);">请求失败: ${e.message}</div>
+                `;
+            });
+            
+            localStorage.setItem('sql_query', sql);
+        }
+
+        // ==================== 参数配置功能 ====================
+        // Python时间函数预设
+        const PYTHON_TIME_FUNCTIONS = [
+            { id: 'now', name: '当前时间', code: 'datetime.now()', desc: '获取当前时间' },
+            { id: 'today_start', name: '今天开始', code: 'datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)', desc: '今天0点' },
+            { id: 'today_end', name: '今天结束', code: 'datetime.now().replace(hour=23, minute=59, second=59, microsecond=999999)', desc: '今天23:59:59' },
+            { id: 'yesterday', name: '昨天', code: '(datetime.now() - timedelta(days=1)).replace(hour=0, minute=0, second=0)', desc: '昨天0点' },
+            { id: 'yesterday_end', name: '昨天结束', code: '(datetime.now() - timedelta(days=1)).replace(hour=23, minute=59, second=59)', desc: '昨天23:59:59' },
+            { id: 'last_week_start', name: '上周开始', code: '(datetime.now() - timedelta(weeks=1)).replace(hour=0, minute=0, second=0)', desc: '上周同一天0点' },
+            { id: 'last_month_start', name: '上月开始', code: '(datetime.now().replace(day=1) - timedelta(days=1)).replace(day=1, hour=0, minute=0, second=0)', desc: '上月1号0点' },
+            { id: 'month_start', name: '本月开始', code: 'datetime.now().replace(day=1, hour=0, minute=0, second=0)', desc: '本月1号0点' },
+            { id: 'year_start', name: '今年开始', code: 'datetime.now().replace(month=1, day=1, hour=0, minute=0, second=0)', desc: '1月1日0点' },
+            { id: 'last_year_start', name: '去年开始', code: 'datetime.now().replace(year=datetime.now().year-1, month=1, day=1, hour=0, minute=0, second=0)', desc: '去年1月1日' },
+        ];
+        
+        // 自定义时间函数
+        function getCustomTimeFunctions() {
+            return JSON.parse(localStorage.getItem('custom_time_functions') || '[]');
+        }
+        
+        function saveCustomTimeFunction(func) {
+            const funcs = getCustomTimeFunctions();
+            func.id = 'custom_' + Date.now();
+            funcs.push(func);
+            localStorage.setItem('custom_time_functions', JSON.stringify(funcs));
+        }
+        
+        function deleteCustomTimeFunction(id) {
+            const funcs = getCustomTimeFunctions();
+            const filtered = funcs.filter(f => f.id !== id);
+            localStorage.setItem('custom_time_functions', JSON.stringify(filtered));
+            updateConfigPanel();
+        }
+        
+        function renderSqlParamsContent() {
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            const customFuncs = getCustomTimeFunctions();
+            const allFuncs = [...PYTHON_TIME_FUNCTIONS, ...customFuncs];
+            
+            if (params.length === 0) {
+                return `
+                    <div style="text-align: center; padding: 40px; color: var(--gray-500);">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px;">
+                            <circle cx="12" cy="12" r="10"/>
+                            <line x1="12" y1="8" x2="12" y2="12"/>
+                            <line x1="12" y1="16" x2="12.01" y2="16"/>
+                        </svg>
+                        <p>暂无参数配置</p>
+                        <p style="font-size: 12px; margin-top: 8px;">点击上方"添加参数"按钮创建参数</p>
+                    </div>
+                    ${renderPythonFunctionsSection(allFuncs, customFuncs)}
+                `;
+            }
+            
+            return `
+                <div class="form-section">
+                    <div class="form-section-header">时间参数配置</div>
+                    <div class="form-section-body">
+                        <p class="form-hint" style="margin-bottom: 16px;">
+                            参数格式：<code style="background: var(--gray-100); padding: 2px 6px; border-radius: 4px;">yyyymmddHHmmss</code>
+                            (如 20260608143000 表示 2026年6月8日14:30:00)
+                        </p>
+                        ${params.map((p, i) => `
+                            <div class="param-card" style="background: var(--gray-50); border-radius: 8px; padding: 16px; margin-bottom: 12px; border: 1px solid var(--gray-200);">
+                                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                                    <div style="display: flex; align-items: center; gap: 8px;">
+                                        <span style="font-weight: 600; color: var(--primary); font-size: 14px;">\${${p.name}}</span>
+                                        <span class="status-badge status-success">${p.type || '时间'}</span>
+                                    </div>
+                                    <button class="btn btn-danger btn-sm" onclick="deleteParam(${i})">删除</button>
+                                </div>
+                                <div class="form-row" style="margin-bottom: 0;">
+                                    <div class="form-group">
+                                        <label class="form-label">参数名称</label>
+                                        <input type="text" class="form-input" value="${p.name}" onchange="updateParam(${i}, 'name', this.value)" placeholder="如: start_time">
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">Python时间函数</label>
+                                        <select class="form-select" onchange="updateParam(${i}, 'func', this.value)">
+                                            ${allFuncs.map(f => `<option value="${f.id}" ${p.func === f.id ? 'selected' : ''}>${f.name}</option>`).join('')}
+                                        </select>
+                                    </div>
+                                    <div class="form-group">
+                                        <label class="form-label">计算结果</label>
+                                        <input type="text" class="form-input" value="${p.displayValue || ''}" readonly style="background: var(--gray-100); font-family: monospace;">
+                                    </div>
+                                </div>
+                                ${p.func ? `<div style="margin-top: 8px; padding: 8px; background: #1e1e1e; border-radius: 4px; color: #d4d4d4; font-family: 'Fira Code', monospace; font-size: 12px;">
+                                    <span style="color: #569cd6;">from</span> datetime <span style="color: #569cd6;">import</span> datetime, timedelta<br>
+                                    ${allFuncs.find(f => f.id === p.func)?.code || ''}
+                                </div>` : ''}
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                ${renderPythonFunctionsSection(allFuncs, customFuncs)}
+            `;
+        }
+        
+        function renderPythonFunctionsSection(allFuncs, customFuncs) {
+            return `
+                <div class="form-section" style="margin-top: 20px;">
+                    <div class="form-section-header" style="display: flex; justify-content: space-between; align-items: center;">
+                        <span>Python时间函数预设</span>
+                        <button class="btn btn-primary btn-sm" onclick="showAddFunctionModal()">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;">
+                                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                            添加自定义函数
+                        </button>
+                    </div>
+                    <div class="form-section-body">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px;">
+                            ${PYTHON_TIME_FUNCTIONS.map(f => `
+                                <div style="padding: 12px; background: var(--gray-50); border-radius: 8px; border: 1px solid var(--gray-200);">
+                                    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px;">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2">
+                                            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                        </svg>
+                                        <span style="font-weight: 600;">${f.name}</span>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-500); margin-bottom: 6px;">${f.desc}</div>
+                                    <code style="font-size: 11px; background: #1e1e1e; color: #4ec9b0; padding: 4px 8px; border-radius: 4px; display: block; overflow-x: auto;">${f.code}</code>
+                                </div>
+                            `).join('')}
+                            ${customFuncs.map(f => `
+                                <div style="padding: 12px; background: var(--gray-50); border-radius: 8px; border: 1px solid var(--gray-200); border-left: 3px solid var(--warning);">
+                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--warning)" stroke-width="2">
+                                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                            </svg>
+                                            <span style="font-weight: 600;">${f.name}</span>
+                                        </div>
+                                        <button class="btn btn-danger btn-sm" style="padding: 2px 6px; font-size: 11px;" onclick="deleteCustomTimeFunction('${f.id}')">删除</button>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--gray-500); margin-bottom: 6px;">${f.desc || '自定义函数'}</div>
+                                    <code style="font-size: 11px; background: #1e1e1e; color: #4ec9b0; padding: 4px 8px; border-radius: 4px; display: block; overflow-x: auto;">${f.code}</code>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function showAddFunctionModal() {
+            const modal = document.createElement('div');
+            modal.className = 'modal-overlay';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3 class="modal-title">添加自定义时间函数</h3>
+                        <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">×</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group">
+                            <label class="form-label">函数名称</label>
+                            <input type="text" id="funcName" class="form-input" placeholder="如: 上季度开始">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">描述</label>
+                            <input type="text" id="funcDesc" class="form-input" placeholder="如: 获取上个季度的开始时间">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Python代码</label>
+                            <textarea id="funcCode" class="form-textarea" rows="3" placeholder="如: (datetime.now() - timedelta(days=90)).replace(day=1, hour=0, minute=0, second=0)" style="font-family: 'Fira Code', monospace;"></textarea>
+                            <p class="form-hint">需要导入: from datetime import datetime, timedelta</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">取消</button>
+                        <button class="btn btn-primary" onclick="saveNewFunction()">保存</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+        }
+        
+        function saveNewFunction() {
+            const name = document.getElementById('funcName').value.trim();
+            const desc = document.getElementById('funcDesc').value.trim();
+            const code = document.getElementById('funcCode').value.trim();
+            
+            if (!name || !code) {
+                alert('请填写函数名称和代码');
+                return;
+            }
+            
+            saveCustomTimeFunction({ name, desc, code });
+            document.querySelector('.modal-overlay').remove();
+            updateConfigPanel();
+        }
+        
+        function addNewParam() {
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            params.push({
+                name: 'param_' + (params.length + 1),
+                func: 'now',
+                type: '时间',
+                value: calculateTimeValueByFunc('now'),
+                displayValue: formatDisplayTime(calculateTimeValueByFunc('now'))
+            });
+            localStorage.setItem('sql_params', JSON.stringify(params));
+            updateConfigPanel();
+        }
+        
+        function updateParam(index, field, value) {
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            params[index][field] = value;
+            // 重新计算时间值
+            params[index].value = calculateTimeValueByFunc(params[index].func);
+            params[index].displayValue = formatDisplayTime(params[index].value);
+            localStorage.setItem('sql_params', JSON.stringify(params));
+            updateConfigPanel();
+        }
+        
+        function deleteParam(index) {
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            params.splice(index, 1);
+            localStorage.setItem('sql_params', JSON.stringify(params));
+            updateConfigPanel();
+        }
+        
+        function saveParams() {
+            alert('参数配置已保存！');
+        }
+        
+        // 根据Python函数ID计算时间值
+        function calculateTimeValueByFunc(funcId) {
+            const customFuncs = getCustomTimeFunctions();
+            const allFuncs = [...PYTHON_TIME_FUNCTIONS, ...customFuncs];
+            const func = allFuncs.find(f => f.id === funcId);
+            
+            if (!func) return new Date();
+            
+            let date = new Date();
+            const now = date;
+            
+            switch(funcId) {
+                case 'now':
+                    break;
+                case 'today_start':
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'today_end':
+                    date.setHours(23, 59, 59, 999);
+                    break;
+                case 'yesterday':
+                    date.setDate(date.getDate() - 1);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'yesterday_end':
+                    date.setDate(date.getDate() - 1);
+                    date.setHours(23, 59, 59, 0);
+                    break;
+                case 'last_week_start':
+                    date.setDate(date.getDate() - 7);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'last_month_start':
+                    date.setDate(1);
+                    date.setMonth(date.getMonth() - 1);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'month_start':
+                    date.setDate(1);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'year_start':
+                    date.setMonth(0, 1);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                case 'last_year_start':
+                    date.setFullYear(date.getFullYear() - 1);
+                    date.setMonth(0, 1);
+                    date.setHours(0, 0, 0, 0);
+                    break;
+                default:
+                    // 自定义函数，尝试解析代码中的偏移
+                    if (func.code) {
+                        const daysMatch = func.code.match(/timedelta\(days=(\d+)\)/);
+                        const weeksMatch = func.code.match(/timedelta\(weeks=(\d+)\)/);
+                        if (daysMatch) {
+                            const days = parseInt(daysMatch[1]);
+                            if (func.code.includes('- timedelta')) {
+                                date.setDate(date.getDate() - days);
+                            } else if (func.code.includes('+ timedelta')) {
+                                date.setDate(date.getDate() + days);
+                            }
+                        }
+                        if (weeksMatch) {
+                            const weeks = parseInt(weeksMatch[1]);
+                            if (func.code.includes('- timedelta')) {
+                                date.setDate(date.getDate() - weeks * 7);
+                            }
+                        }
+                    }
+            }
+            
+            return date;
+        }
+        
+        // 格式化显示时间 yyyymmddHHmmss
+        function formatDisplayTime(date) {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const H = String(date.getHours()).padStart(2, '0');
+            const M = String(date.getMinutes()).padStart(2, '0');
+            const S = String(date.getSeconds()).padStart(2, '0');
+            return `${y}${m}${d}${H}${M}${S}`;
+        }
+
+        // ==================== 定时任务功能 ====================
+        function renderTaskListContent() {
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            
+            if (tasks.length === 0) {
+                return `
+                    <div style="text-align: center; padding: 40px; color: var(--gray-500);">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px;">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <p>暂无定时任务</p>
+                        <p style="font-size: 12px; margin-top: 8px;">点击左侧"新建任务"创建定时推送任务</p>
+                    </div>
+                `;
+            }
+            
+            const statusColors = {
+                active: 'status-success',
+                paused: 'status-danger',
+                running: 'status-success'
+            };
+            const statusTexts = {
+                active: '运行中',
+                paused: '已暂停',
+                running: '执行中'
+            };
+            
+            return `
+                <div class="form-section">
+                    <div class="form-section-header">任务列表</div>
+                    <div class="form-section-body" style="padding: 0;">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>任务名称</th>
+                                    <th>Cron表达式</th>
+                                    <th>下次执行</th>
+                                    <th>状态</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tasks.map((task, i) => `
+                                    <tr>
+                                        <td>
+                                            <div style="font-weight: 500;">${task.name}</div>
+                                            <div style="font-size: 12px; color: var(--gray-500);">${task.sql ? 'SQL查询推送' : '数据同步推送'}</div>
+                                        </td>
+                                        <td>
+                                            <code style="background: var(--gray-100); padding: 2px 6px; border-radius: 4px; font-size: 12px;">${task.cron}</code>
+                                            <div style="font-size: 11px; color: var(--gray-500); margin-top: 2px;">${task.cronDesc || ''}</div>
+                                        </td>
+                                        <td>${task.nextRun || '-'}</td>
+                                        <td><span class="status-badge ${statusColors[task.status] || ''}">${statusTexts[task.status] || task.status}</span></td>
+                                        <td>
+                                            <div style="display: flex; gap: 4px;">
+                                                ${task.status === 'active' ? 
+                                                    `<button class="btn btn-secondary btn-sm" onclick="pauseTask(${i})">暂停</button>` :
+                                                    `<button class="btn btn-primary btn-sm" onclick="resumeTask(${i})">启动</button>`
+                                                }
+                                                <button class="btn btn-secondary btn-sm" onclick="editTask(${i})">编辑</button>
+                                                <button class="btn btn-danger btn-sm" onclick="deleteTask(${i})">删除</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function renderTaskConfigContent() {
+            const cronPresets = [
+                { label: '每周一 9:00', value: '0 0 9 ? * MON', desc: '每周一早上9点执行' },
+                { label: '每天 8:30', value: '0 30 8 * * ?', desc: '每天早上8:30执行' },
+                { label: '每小时', value: '0 0 * * * ?', desc: '每小时执行一次' },
+                { label: '每月1号 0:00', value: '0 0 0 1 * ?', desc: '每月1号凌晨执行' }
+            ];
+            
+            // 获取已保存的数据源配置
+            const sourceConfigs = JSON.parse(localStorage.getItem('source_db_configs') || '[]');
+            const targetConfigs = JSON.parse(localStorage.getItem('target_db_configs') || '[]');
+            const allConfigs = [...sourceConfigs, ...targetConfigs];
+            
+            return `
+                <div class="form-section">
+                    <div class="form-section-header">基本信息</div>
+                    <div class="form-section-body">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">任务名称</label>
+                                <input type="text" class="form-input" id="task-name" placeholder="如: 每周一数据推送">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-section-header">
+                        <span>定时配置</span>
+                        <select id="cron-preset" onchange="applyCronPreset()" style="padding: 4px 8px; border-radius: 4px; border: 1px solid var(--gray-200);">
+                            <option value="">选择预设...</option>
+                            ${cronPresets.map(p => `<option value="${p.value}" data-desc="${p.desc}">${p.label}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-section-body">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 2;">
+                                <label class="form-label">Cron表达式</label>
+                                <input type="text" class="form-input" id="task-cron" placeholder="0 0 9 ? * MON" onchange="updateCronDesc()">
+                                <div class="form-hint" id="cron-desc" style="margin-top: 4px;"></div>
+                            </div>
+                        </div>
+                        <div style="background: var(--gray-50); border-radius: 6px; padding: 12px; margin-top: 12px;">
+                            <div style="font-size: 12px; color: var(--gray-500); margin-bottom: 8px;">Cron表达式格式：秒 分 时 日 月 星期</div>
+                            <div style="font-size: 11px; color: var(--gray-400); line-height: 1.6;">
+                                示例：<br>
+                                • 0 0 9 ? * MON - 每周一9点<br>
+                                • 0 30 8 * * ? - 每天8:30<br>
+                                • 0 0 */2 * * ? - 每2小时<br>
+                                • 0 0 0 1 * ? - 每月1号0点
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-section-header">数据源配置</div>
+                    <div class="form-section-body">
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 2;">
+                                <label class="form-label">选择数据源</label>
+                                <select class="form-select" id="task-datasource" onchange="onDataSourceSelect()">
+                                    <option value="">请选择数据源...</option>
+                                    ${allConfigs.map(c => `<option value="${c.name}" data-config='${JSON.stringify(c)}'>${c.name} (${c.db_type || 'mysql'})</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">连接状态</label>
+                                <div id="datasource-status" style="padding: 8px 0; color: var(--gray-500);">未选择</div>
+                            </div>
+                        </div>
+                        <div id="datasource-info" style="display: none; background: var(--gray-50); border-radius: 6px; padding: 12px; margin-top: 12px;">
+                            <div style="font-size: 12px; color: var(--gray-600); margin-bottom: 8px; font-weight: 500;">数据源信息</div>
+                            <div id="datasource-details" style="font-size: 11px; color: var(--gray-500); line-height: 1.8;"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-section" style="margin-top: 16px;">
+                    <div class="form-section-header">SQL查询配置</div>
+                    <div class="form-section-body">
+                        <div class="form-group">
+                            <label class="form-label">SQL查询语句</label>
+                            <div id="task-sql-editor" style="border: 1px solid var(--gray-200); border-radius: 6px; overflow: hidden;"></div>
+                            <textarea id="task-sql" style="display: none;">${localStorage.getItem('sql_query') || ''}</textarea>
+                            <div class="form-hint" style="margin-top: 8px;">
+                                支持参数：${'$'}{start_time}、${'$'}{end_time}、${'$'}{current_time} 等，参数值在"参数配置"中设置
+                            </div>
+                        </div>
+                        <div style="margin-top: 12px;">
+                            <button class="btn btn-secondary" onclick="previewSqlParams()">预览参数替换</button>
+                            <button class="btn btn-primary" onclick="testSqlQuery()" style="margin-left: 8px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 4px; vertical-align: middle;"><polygon points="5,3 19,12 5,21"/></svg>
+                                测试查询
+                            </button>
+                            <button class="btn btn-secondary" onclick="debugSqlQuery()" style="margin-left: 8px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="margin-right: 4px; vertical-align: middle;"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="6" r="1.5"/><circle cx="17" cy="14" r="1.5"/><circle cx="7" cy="14" r="1.5"/></svg>
+                                调试
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--gray-200);">
+                    <button class="btn btn-primary" onclick="saveTask()">保存任务</button>
+                    <button class="btn btn-secondary" onclick="selectComponent('task-list')" style="margin-left: 8px;">取消</button>
+                </div>
+            `;
+        }
+        
+        function onDataSourceSelect() {
+            const select = document.getElementById('task-datasource');
+            const statusEl = document.getElementById('datasource-status');
+            const infoEl = document.getElementById('datasource-info');
+            const detailsEl = document.getElementById('datasource-details');
+            
+            if (!select.value) {
+                statusEl.innerHTML = '<span style="color: var(--gray-500);">未选择</span>';
+                infoEl.style.display = 'none';
+                return;
+            }
+            
+            const option = select.selectedOptions[0];
+            const config = JSON.parse(option.dataset.config);
+            
+            // 显示数据源信息
+            statusEl.innerHTML = '<span style="color: var(--success);">● 已选择</span>';
+            infoEl.style.display = 'block';
+            detailsEl.innerHTML = `
+                <div>类型: ${config.db_type || 'mysql'}</div>
+                <div>主机: ${config.host}</div>
+                <div>端口: ${config.port}</div>
+                <div>数据库: ${config.database || '-'}</div>
+                <div>用户: ${config.username}</div>
+            `;
+        }
+        
+        function previewSqlParams() {
+            let sql = document.getElementById('task-sql').value;
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            
+            if (!sql) {
+                alert('请输入SQL语句');
+                return;
+            }
+            
+            // 替换参数
+            params.forEach(p => {
+                const regex = new RegExp('\\$\\{' + p.name + '\\}', 'g');
+                sql = sql.replace(regex, p.value || '[' + p.name + ']');
+            });
+            
+            alert('参数替换后的SQL:\n\n' + sql);
+        }
+        
+        function testSqlQuery() {
+            const datasource = document.getElementById('task-datasource');
+            let sql = document.getElementById('task-sql').value;
+            
+            if (!datasource.value) {
+                alert('请先选择数据源');
+                return;
+            }
+            if (!sql) {
+                alert('请输入SQL语句');
+                return;
+            }
+            
+            // 替换参数
+            const params = JSON.parse(localStorage.getItem('sql_params') || '[]');
+            params.forEach(p => {
+                const regex = new RegExp('\\$\\{' + p.name + '\\}', 'g');
+                sql = sql.replace(regex, p.value || '');
+            });
+            
+            const config = JSON.parse(datasource.selectedOptions[0].dataset.config);
+            
+            // 调用后端执行SQL
+            fetch('/api/sql/execute', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ...config,
+                    sql
+                })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    alert('查询成功！\n返回 ' + (d.data?.length || 0) + ' 条记录');
+                } else {
+                    alert('查询失败: ' + d.error);
+                }
+            }).catch(e => {
+                alert('请求失败: ' + e.message);
+            });
+        }
+        
+        function applyCronPreset() {
+            const preset = document.getElementById('cron-preset');
+            const cron = preset.value;
+            const desc = preset.selectedOptions[0]?.dataset?.desc || '';
+            
+            if (cron) {
+                document.getElementById('task-cron').value = cron;
+                document.getElementById('cron-desc').textContent = desc;
+            }
+        }
+        
+        function updateCronDesc() {
+            const cron = document.getElementById('task-cron').value;
+            const desc = parseCronDescription(cron);
+            document.getElementById('cron-desc').textContent = desc;
+        }
+        
+        function parseCronDescription(cron) {
+            if (!cron) return '';
+            const parts = cron.split(' ');
+            if (parts.length !== 6) return '格式不正确';
+            
+            const [sec, min, hour, day, month, week] = parts;
+            let desc = '';
+            
+            if (week !== '?' && week !== '*') {
+                const weekNames = { 'MON': '周一', 'TUE': '周二', 'WED': '周三', 'THU': '周四', 'FRI': '周五', 'SAT': '周六', 'SUN': '周日' };
+                desc += `每${weekNames[week] || week}`;
+            } else if (day !== '*' && day !== '?') {
+                desc += `每月${day}号`;
+            } else {
+                desc = '每天';
+            }
+            
+            if (hour !== '*' && hour !== '?') {
+                desc += ` ${hour}点`;
+            }
+            if (min !== '*' && min !== '?') {
+                desc += `${min}分`;
+            }
+            
+            return desc + '执行';
+        }
+        
+        function testCronExpression() {
+            const cron = document.getElementById('task-cron').value;
+            if (!cron) {
+                alert('请输入Cron表达式');
+                return;
+            }
+            
+            fetch('/api/cron/validate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ cron })
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    alert(`表达式有效！\n下次执行时间: ${d.next_run}\n描述: ${d.description}`);
+                } else {
+                    alert('表达式无效: ' + d.error);
+                }
+            }).catch(() => {
+                alert('表达式解析: ' + parseCronDescription(cron));
+            });
+        }
+        
+        function saveTask() {
+            const name = document.getElementById('task-name').value;
+            const cron = document.getElementById('task-cron').value;
+            const datasource = document.getElementById('task-datasource');
+            const sql = document.getElementById('task-sql')?.value || '';
+            
+            // 从钉钉推送配置获取webhook
+            const pushConfig = JSON.parse(localStorage.getItem('dingtalk_push_config') || '{}');
+            
+            if (!name || !cron) {
+                alert('请填写任务名称和Cron表达式');
+                return;
+            }
+            if (!datasource.value) {
+                alert('请选择数据源');
+                return;
+            }
+            if (!pushConfig.webhook) {
+                alert('请先在"钉钉推送"中配置Webhook地址');
+                return;
+            }
+            
+            const datasourceConfig = JSON.parse(datasource.selectedOptions[0].dataset.config);
+            
+            const task = {
+                id: Date.now(),
+                name,
+                cron,
+                cronDesc: parseCronDescription(cron),
+                datasource: datasource.value,
+                datasourceConfig,
+                sql,
+                webhook: pushConfig.webhook,
+                secret: pushConfig.secret,
+                status: 'active',
+                createTime: new Date().toLocaleString('zh-CN'),
+                nextRun: calculateNextRun(cron)
+            };
+            
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            tasks.push(task);
+            localStorage.setItem('scheduled_tasks', JSON.stringify(tasks));
+            
+            // 调用后端创建定时任务
+            fetch('/api/task/create', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(task)
+            }).then(r => r.json()).then(d => {
+                if (d.success) {
+                    alert('定时任务创建成功！');
+                    selectComponent('task-list');
+                } else {
+                    alert('创建失败: ' + d.error);
+                }
+            }).catch(() => {
+                alert('任务已保存到本地！');
+                selectComponent('task-list');
+            });
+        }
+        
+        function calculateNextRun(cron) {
+            // 简单计算下次运行时间
+            const parts = cron.split(' ');
+            if (parts.length !== 6) return '-';
+            
+            const [sec, min, hour, day, month, week] = parts;
+            let next = new Date();
+            
+            // 简化处理：根据表达式计算下次执行时间
+            if (week !== '?') {
+                const weekNum = { 'MON': 1, 'TUE': 2, 'WED': 3, 'THU': 4, 'FRI': 5, 'SAT': 6, 'SUN': 0 };
+                const targetDay = weekNum[week] || 0;
+                const currentDay = next.getDay();
+                let daysUntil = (targetDay - currentDay + 7) % 7;
+                if (daysUntil === 0 && next.getHours() >= parseInt(hour)) {
+                    daysUntil = 7;
+                }
+                next.setDate(next.getDate() + daysUntil);
+            }
+            
+            next.setHours(parseInt(hour) || 0);
+            next.setMinutes(parseInt(min) || 0);
+            next.setSeconds(parseInt(sec) || 0);
+            
+            return next.toLocaleString('zh-CN');
+        }
+        
+        function pauseTask(index) {
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            tasks[index].status = 'paused';
+            localStorage.setItem('scheduled_tasks', JSON.stringify(tasks));
+            
+            fetch('/api/task/pause', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: tasks[index].id })
+            }).catch(() => {});
+            
+            updateConfigPanel();
+        }
+        
+        function resumeTask(index) {
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            tasks[index].status = 'active';
+            tasks[index].nextRun = calculateNextRun(tasks[index].cron);
+            localStorage.setItem('scheduled_tasks', JSON.stringify(tasks));
+            
+            fetch('/api/task/resume', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: tasks[index].id })
+            }).catch(() => {});
+            
+            updateConfigPanel();
+        }
+        
+        function editTask(index) {
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            const task = tasks[index];
+            
+            selectComponent('task-config');
+            setTimeout(() => {
+                document.getElementById('task-name').value = task.name;
+                document.getElementById('task-cron').value = task.cron;
+                document.getElementById('task-type').value = task.type;
+                if (document.getElementById('task-sql')) document.getElementById('task-sql').value = task.sql || '';
+                document.getElementById('task-webhook').value = task.webhook;
+                if (document.getElementById('task-secret')) document.getElementById('task-secret').value = task.secret || '';
+            }, 100);
+        }
+        
+        function deleteTask(index) {
+            if (!confirm('确定要删除这个任务吗？')) return;
+            
+            const tasks = JSON.parse(localStorage.getItem('scheduled_tasks') || '[]');
+            const taskId = tasks[index].id;
+            tasks.splice(index, 1);
+            localStorage.setItem('scheduled_tasks', JSON.stringify(tasks));
+            
+            fetch('/api/task/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ task_id: taskId })
+            }).catch(() => {});
+            
+            updateConfigPanel();
+        }
+        
+        function refreshTaskList() {
+            updateConfigPanel();
+        }
+        
+        function toggleTaskType() {
+            const type = document.getElementById('task-type').value;
+            const sqlSection = document.getElementById('sql-config-section');
+            if (sqlSection) {
+                sqlSection.style.display = type === 'sql_push' ? '' : 'none';
+            }
         }
 
         // ==================== 初始化 ====================
